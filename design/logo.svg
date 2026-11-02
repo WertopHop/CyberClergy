@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- CyberClergy emblem: an eternal flame held by a circuit-like halo. -->
+  <defs>
+    <radialGradient id="background" cx="50%" cy="35%" r="75%">
+      <stop offset="0%" stop-color="#241d3d" />
+      <stop offset="100%" stop-color="#0b0d17" />
+    </radialGradient>
+    <linearGradient id="flame" x1="50%" y1="100%" x2="50%" y2="0%">
+      <stop offset="0%" stop-color="#c9a227" />
+      <stop offset="55%" stop-color="#f2d06b" />
+      <stop offset="100%" stop-color="#fff6d5" />
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="220" fill="url(#background)" />
+  <circle cx="512" cy="512" r="330" fill="none" stroke="#3b3560" stroke-width="22" />
+  <circle cx="512" cy="512" r="392" fill="none" stroke="#c9a227" stroke-width="10" stroke-dasharray="26 34" opacity="0.65" />
+  <path
+    d="M512 236c58 96 172 158 172 296 0 116-77 196-172 196s-172-80-172-196c0-138 114-200 172-296z"
+    fill="url(#flame)"
+  />
+  <path
+    d="M512 452c26 46 74 74 74 138 0 54-34 92-74 92s-74-38-74-92c0-64 48-92 74-138z"
+    fill="#0b0d17"
+    opacity="0.82"
+  />
+  <circle cx="512" cy="612" r="34" fill="#f2d06b" />
+</svg>

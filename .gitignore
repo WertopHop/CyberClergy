@@ -1,0 +1,19 @@
+#local files
+wert-*
+
+# environment secrets
+.env
+.env.*
+!.env.example
+
+# rust
+target/
+
+# node
+node_modules/
+dist/
+.vite/
+
+# tauri generated artifacts
+src-tauri/gen/
+src-tauri/target/

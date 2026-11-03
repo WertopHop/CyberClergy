@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Endpoint;
+use crate::config::ProviderConfig;
 use crate::errors::LlmError;
 use crate::provider::Provider;
 use crate::providers::{map_status, parse_retry_after, transport_error};
@@ -19,15 +19,15 @@ use crate::types::{ChatRequest, ChatResponse, ProviderId, Role, Usage};
 const API_KEY_HEADER: &str = "x-goog-api-key";
 
 pub struct GeminiProvider {
-    endpoint: Endpoint,
+    config: ProviderConfig,
     client: reqwest::Client,
     timeout: Duration,
 }
 
 impl GeminiProvider {
-    pub fn new(endpoint: Endpoint, client: reqwest::Client, timeout: Duration) -> Self {
+    pub fn new(config: ProviderConfig, client: reqwest::Client, timeout: Duration) -> Self {
         Self {
-            endpoint,
+            config,
             client,
             timeout,
         }
@@ -120,12 +120,12 @@ impl Provider for GeminiProvider {
     }
 
     fn model(&self) -> &str {
-        &self.endpoint.model
+        &self.config.model
     }
 
     async fn chat(&self, request: &ChatRequest) -> Result<ChatResponse, LlmError> {
         let api_key = self
-            .endpoint
+            .config
             .api_key
             .clone()
             .ok_or(LlmError::NotConfigured(ProviderId::Gemini))?;
@@ -177,10 +177,10 @@ impl Provider for GeminiProvider {
         let model = request
             .model
             .clone()
-            .unwrap_or_else(|| self.endpoint.model.clone());
+            .unwrap_or_else(|| self.config.model.clone());
         let url = format!(
             "{}/models/{model}:generateContent",
-            self.endpoint.base_url.trim_end_matches('/')
+            self.config.base_url.trim_end_matches('/')
         );
 
         let started = Instant::now();
@@ -254,7 +254,7 @@ impl Provider for GeminiProvider {
             provider: ProviderId::Gemini,
             model: payload
                 .model_version
-                .unwrap_or_else(|| self.endpoint.model.clone()),
+                .unwrap_or_else(|| self.config.model.clone()),
             text: text.to_string(),
             usage: payload.usage_metadata.map(|usage| Usage {
                 prompt_tokens: usage.prompt_token_count,

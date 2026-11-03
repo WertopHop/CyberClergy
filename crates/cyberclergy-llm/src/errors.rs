@@ -25,6 +25,8 @@ pub enum LlmError {
         provider: ProviderId,
         detail: String,
     },
+    /// The prayer prompt could not be rendered (bad placeholder, empty file).
+    PromptInvalid { detail: String },
     /// The provider rejected the credentials.
     Auth {
         provider: ProviderId,
@@ -92,6 +94,7 @@ impl LlmError {
             | LlmError::Timeout { provider, .. }
             | LlmError::Parse { provider, .. } => Some(*provider),
             LlmError::NoProvidersConfigured
+            | LlmError::PromptInvalid { .. }
             | LlmError::Internal { .. }
             | LlmError::AllProvidersFailed { .. } => None,
         }
@@ -129,6 +132,9 @@ impl fmt::Display for LlmError {
             }
             LlmError::InvalidConfig { provider, detail } => {
                 write!(f, "{provider}: invalid configuration: {detail}")
+            }
+            LlmError::PromptInvalid { detail } => {
+                write!(f, "the prayer prompt could not be rendered: {detail}")
             }
             LlmError::Auth {
                 provider,

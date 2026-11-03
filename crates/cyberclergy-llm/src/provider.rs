@@ -2,6 +2,9 @@
 //!
 //! The registry is the only place that knows about "many providers at once".
 //! Adapters stay dumb: one request in, one normalised response out.
+//! New providers plug in through [`crate::config::PROVIDER_SPECS`]; this file
+//! only maps a [`Protocol`] to its adapter, so adding an OpenAI-compatible
+//! backend does not touch the registry at all.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -10,7 +13,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use reqwest::Client;
 
-use crate::config::{ProviderStatus, Settings, SharedSettings};
+use crate::config::{Protocol, ProviderStatus, Settings, SharedSettings};
 use crate::errors::LlmError;
 use crate::providers::cloudflare::CloudflareProvider;
 use crate::providers::gemini::GeminiProvider;
@@ -56,48 +59,26 @@ impl Registry {
         let timeout = settings.shared.timeout;
         let mut providers: BTreeMap<ProviderId, Arc<dyn Provider>> = BTreeMap::new();
 
-        for id in [
-            ProviderId::OpenRouter,
-            ProviderId::Groq,
-            ProviderId::Mistral,
-            ProviderId::Nvidia,
-        ] {
-            let endpoint = settings
-                .endpoint(id)
-                .expect("openai-compatible providers always have an endpoint");
-            if endpoint.is_configured() {
-                providers.insert(
-                    id,
-                    Arc::new(OpenAiCompatProvider::new(
-                        id,
-                        endpoint.clone(),
-                        client.clone(),
-                        timeout,
-                    )),
-                );
+        for config in settings.providers() {
+            if !config.is_configured() {
+                continue;
             }
-        }
-
-        if settings.gemini.is_configured() {
-            providers.insert(
-                ProviderId::Gemini,
-                Arc::new(GeminiProvider::new(
-                    settings.gemini.clone(),
+            let adapter: Arc<dyn Provider> = match config.protocol() {
+                Protocol::OpenAiChat => Arc::new(OpenAiCompatProvider::new(
+                    config.clone(),
                     client.clone(),
                     timeout,
                 )),
-            );
-        }
-
-        if settings.cloudflare.is_configured() {
-            providers.insert(
-                ProviderId::Cloudflare,
-                Arc::new(CloudflareProvider::new(
-                    settings.cloudflare.clone(),
+                Protocol::Gemini => {
+                    Arc::new(GeminiProvider::new(config.clone(), client.clone(), timeout))
+                }
+                Protocol::CloudflareWorkersAi => Arc::new(CloudflareProvider::new(
+                    config.clone(),
                     client.clone(),
                     timeout,
                 )),
-            );
+            };
+            providers.insert(config.id(), adapter);
         }
 
         Ok(Self {

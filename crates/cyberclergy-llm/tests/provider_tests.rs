@@ -401,3 +401,95 @@ async fn cloudflare_without_account_is_not_registered() {
         Err(LlmError::NotConfigured(ProviderId::Cloudflare))
     ));
 }
+
+#[tokio::test]
+async fn structured_content_parts_are_joined() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "model": "llama-3.3-70b-versatile",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        { "type": "text", "text": "Amen. " },
+                        { "type": "text", "text": "So be it." }
+                    ]
+                },
+                "finish_reason": "stop"
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let registry = groq_registry(&server, &[("CC_MAX_RETRIES", "0")]);
+    let response = registry
+        .chat(ProviderId::Groq, &ChatRequest::user("ping"))
+        .await
+        .unwrap();
+
+    assert_eq!(response.text, "Amen. So be it.");
+    assert!(response.usage.is_none());
+}
+
+#[tokio::test]
+async fn exhausted_budget_reports_an_actionable_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "model": "some-reasoning-model",
+            "choices": [{
+                "message": { "role": "assistant", "content": null },
+                "finish_reason": "length"
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let registry = groq_registry(&server, &[("CC_MAX_RETRIES", "0")]);
+    let error = registry
+        .chat(ProviderId::Groq, &ChatRequest::user("ping"))
+        .await
+        .unwrap_err();
+
+    match error {
+        LlmError::Parse { detail, .. } => {
+            assert!(detail.contains("token budget"));
+            assert!(detail.contains("length"));
+        }
+        other => panic!("expected a parse error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn reasoning_only_response_is_explained() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "model": "some-reasoning-model",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "The user wants a short confirmation."
+                },
+                "finish_reason": "stop"
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let registry = groq_registry(&server, &[("CC_MAX_RETRIES", "0")]);
+    let error = registry
+        .chat(ProviderId::Groq, &ChatRequest::user("ping"))
+        .await
+        .unwrap_err();
+
+    match error {
+        LlmError::Parse { detail, .. } => assert!(detail.contains("only reasoning content")),
+        other => panic!("expected a parse error, got {other:?}"),
+    }
+}

@@ -11,20 +11,20 @@ use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::config::CloudflareConfig;
+use crate::config::{ProviderConfig, VAR_CLOUDFLARE_ACCOUNT_ID};
 use crate::errors::LlmError;
 use crate::provider::Provider;
 use crate::providers::{extract_error_message, map_status, parse_retry_after, transport_error};
 use crate::types::{ChatRequest, ChatResponse, ProviderId, Role, Usage};
 
 pub struct CloudflareProvider {
-    config: CloudflareConfig,
+    config: ProviderConfig,
     client: reqwest::Client,
     timeout: Duration,
 }
 
 impl CloudflareProvider {
-    pub fn new(config: CloudflareConfig, client: reqwest::Client, timeout: Duration) -> Self {
+    pub fn new(config: ProviderConfig, client: reqwest::Client, timeout: Duration) -> Self {
         Self {
             config,
             client,
@@ -33,14 +33,12 @@ impl CloudflareProvider {
     }
 
     fn endpoint_url(&self) -> Result<String, LlmError> {
-        let account_id = self
-            .config
-            .account_id
-            .as_deref()
-            .ok_or_else(|| LlmError::InvalidConfig {
+        let account_id = self.config.required_value(VAR_CLOUDFLARE_ACCOUNT_ID).ok_or_else(
+            || LlmError::InvalidConfig {
                 provider: ProviderId::Cloudflare,
-                detail: "CLOUDFLARE_ACCOUNT_ID is not set".to_string(),
-            })?;
+                detail: format!("{VAR_CLOUDFLARE_ACCOUNT_ID} is not set"),
+            },
+        )?;
         Ok(format!(
             "{}/accounts/{account_id}/ai/run/{}",
             self.config.base_url.trim_end_matches('/'),
@@ -77,7 +75,7 @@ impl Provider for CloudflareProvider {
     async fn chat(&self, request: &ChatRequest) -> Result<ChatResponse, LlmError> {
         let api_token = self
             .config
-            .api_token
+            .api_key
             .clone()
             .ok_or(LlmError::NotConfigured(ProviderId::Cloudflare))?;
 
@@ -163,16 +161,20 @@ impl Provider for CloudflareProvider {
             });
         }
 
-        let usage = result
-            .get("usage")
-            .map(|usage| Usage {
-                prompt_tokens: usage.get("prompt_tokens").and_then(Value::as_u64).map(|v| v as u32),
-                completion_tokens: usage
-                    .get("completion_tokens")
-                    .and_then(Value::as_u64)
-                    .map(|v| v as u32),
-                total_tokens: usage.get("total_tokens").and_then(Value::as_u64).map(|v| v as u32),
-            });
+        let usage = result.get("usage").map(|usage| Usage {
+            prompt_tokens: usage
+                .get("prompt_tokens")
+                .and_then(Value::as_u64)
+                .map(|value| value as u32),
+            completion_tokens: usage
+                .get("completion_tokens")
+                .and_then(Value::as_u64)
+                .map(|value| value as u32),
+            total_tokens: usage
+                .get("total_tokens")
+                .and_then(Value::as_u64)
+                .map(|value| value as u32),
+        });
 
         Ok(ChatResponse {
             provider: ProviderId::Cloudflare,

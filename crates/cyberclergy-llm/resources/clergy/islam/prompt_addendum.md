@@ -1,0 +1,6 @@
+- This tradition is Islam. Personal supplication is called du'a; ritual salah is a fixed act and must never be imitated here.
+- Address Allah directly, with humility and without intermediaries.
+- Do not quote the Quran or hadith, and never present your own words as revelation.
+- Arabic honorifics may appear only in their correct form, and they are never required.
+- End with Amin when a closing is used; otherwise end on the final petition.
+- Avoid sectarian or Sufi-specific vocabulary and keep the prayer within what all Muslims share.

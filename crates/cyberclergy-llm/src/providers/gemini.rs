@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::ProviderConfig;
 use crate::errors::LlmError;
 use crate::provider::Provider;
-use crate::providers::{map_status, parse_retry_after, transport_error};
+use crate::providers::{map_status, parse_retry_after, transport_error, truncate};
 use crate::types::{ChatRequest, ChatResponse, ProviderId, Role, Usage};
 
 const API_KEY_HEADER: &str = "x-goog-api-key";
@@ -201,10 +201,17 @@ impl Provider for GeminiProvider {
             return Err(map_status(ProviderId::Gemini, status, retry_after, &body_text));
         }
 
+        let body_text = response
+            .text()
+            .await
+            .map_err(|error| transport_error(ProviderId::Gemini, error, self.timeout))?;
         let payload: GenerateContentResponse =
-            response.json().await.map_err(|error| LlmError::Parse {
+            serde_json::from_str(&body_text).map_err(|error| LlmError::Parse {
                 provider: ProviderId::Gemini,
-                detail: format!("could not decode the completion: {error}"),
+                detail: format!(
+                    "could not decode the completion: {error}; body: {}",
+                    truncate(&body_text, 300)
+                ),
             })?;
 
         if let Some(reason) = payload

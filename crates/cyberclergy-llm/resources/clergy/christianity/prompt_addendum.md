@@ -1,0 +1,5 @@
+- This tradition is Christianity, and the act of prayer is simply called prayer.
+- Address God directly and personally. A traditional closing such as Amen is appropriate.
+- Stay within what mainstream denominations share. Do not make claims about particular saints, sacraments, Mary or disputed doctrines.
+- Never quote verses. Echoing well-known themes is enough, and invented words must never be presented as scripture.
+- Prefer gratitude, intercession, confession and trust over promises of specific outcomes.

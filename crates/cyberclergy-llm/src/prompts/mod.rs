@@ -19,6 +19,7 @@ pub const KEY_TONE: &str = "tone";
 pub const KEY_PRAYER_LENGTH: &str = "prayer_length";
 pub const KEY_INTENT: &str = "intent";
 pub const KEY_USER_NAME: &str = "user_name";
+pub const KEY_TRADITION_NOTES: &str = "tradition_notes";
 
 pub const DEFAULT_TRADITION: &str =
     "an unspecified spiritual tradition, addressing the divine in inclusive and respectful terms";
@@ -27,6 +28,8 @@ pub const DEFAULT_TONE: &str = "reverent and warm";
 pub const DEFAULT_PRAYER_LENGTH: &str = "a single short paragraph of roughly 60 to 110 words";
 pub const DEFAULT_INTENT: &str = "general wellbeing, protection and peace";
 pub const DEFAULT_USER_NAME: &str = "the person you serve";
+pub const DEFAULT_TRADITION_NOTES: &str =
+    "No additional tradition-specific notes; follow the general guidance above.";
 
 /// Problems that make a prompt unusable. They are always reported, never
 /// papered over, because a malformed prompt looks like bad model output.
@@ -175,6 +178,9 @@ pub struct PrayerSpec {
     pub length: Option<String>,
     pub intent: Option<String>,
     pub user_name: Option<String>,
+    /// Free-form notes injected into the `Tradition-specific notes` section.
+    /// Religion profiles use this for their addendum.
+    pub tradition_notes: Option<String>,
 }
 
 impl PrayerSpec {
@@ -212,6 +218,11 @@ impl PrayerSpec {
         self
     }
 
+    pub fn with_tradition_notes(mut self, notes: impl Into<String>) -> Self {
+        self.tradition_notes = Some(notes.into());
+        self
+    }
+
     /// Builds the complete placeholder context, applying defaults for anything
     /// the caller left out or left blank.
     pub fn context(&self) -> PromptContext {
@@ -236,6 +247,11 @@ impl PrayerSpec {
             .set(
                 KEY_USER_NAME,
                 normalized(&self.user_name).unwrap_or_else(|| DEFAULT_USER_NAME.to_string()),
+            )
+            .set(
+                KEY_TRADITION_NOTES,
+                normalized(&self.tradition_notes)
+                    .unwrap_or_else(|| DEFAULT_TRADITION_NOTES.to_string()),
             )
     }
 }

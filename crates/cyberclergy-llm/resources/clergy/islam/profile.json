@@ -1,0 +1,22 @@
+{
+  "id": "islam",
+  "version": 1,
+  "identity": {
+    "names": {
+      "en": "Islam",
+      "ru": "Ислам"
+    },
+    "tradition": "Islam, kept broad and without a specific denomination",
+    "prayer_term": "du'a",
+    "closing_formula": "Amin"
+  },
+  "style": {
+    "tone": "reverent, humble and warm",
+    "length": "one short paragraph of roughly 60 to 110 words",
+    "short_length": "one or two sentences of roughly 15 to 30 words"
+  },
+  "schedule": {
+    "interval_seconds": 900,
+    "min_interval_seconds": 300
+  }
+}

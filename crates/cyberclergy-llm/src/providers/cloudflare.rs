@@ -14,7 +14,9 @@ use serde_json::Value;
 use crate::config::{ProviderConfig, VAR_CLOUDFLARE_ACCOUNT_ID};
 use crate::errors::LlmError;
 use crate::provider::Provider;
-use crate::providers::{extract_error_message, map_status, parse_retry_after, transport_error};
+use crate::providers::{
+    extract_error_message, map_status, parse_retry_after, transport_error, truncate,
+};
 use crate::types::{ChatRequest, ChatResponse, ProviderId, Role, Usage};
 
 pub struct CloudflareProvider {
@@ -129,10 +131,18 @@ impl Provider for CloudflareProvider {
             ));
         }
 
-        let payload: Value = response.json().await.map_err(|error| LlmError::Parse {
-            provider: ProviderId::Cloudflare,
-            detail: format!("could not decode the completion: {error}"),
-        })?;
+        let body_text = response
+            .text()
+            .await
+            .map_err(|error| transport_error(ProviderId::Cloudflare, error, self.timeout))?;
+        let payload: Value =
+            serde_json::from_str(&body_text).map_err(|error| LlmError::Parse {
+                provider: ProviderId::Cloudflare,
+                detail: format!(
+                    "could not decode the completion: {error}; body: {}",
+                    truncate(&body_text, 300)
+                ),
+            })?;
 
         if payload.get("success").and_then(Value::as_bool) == Some(false) {
             return Err(LlmError::Server {

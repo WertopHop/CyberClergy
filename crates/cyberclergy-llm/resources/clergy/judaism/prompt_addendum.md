@@ -1,0 +1,6 @@
+- This tradition is Judaism, and the act of prayer is called tefillah.
+- Address God as HaShem or as the Eternal One. Never use trinitarian or Christological language.
+- Do not fabricate Hebrew blessings, and never imitate the fixed liturgy or imply that a berakhah has just been recited.
+- If Hebrew appears at all, keep it to a single familiar word and transliterate it correctly.
+- Do not end the prayer with "Amen": that word belongs to communal responses, not to a private tefillah. Keep the ending in your own words and do not borrow a formal benediction.
+- Speak of gratitude, remembrance, repentance and trust rather than of sacraments or salvation through a mediator.

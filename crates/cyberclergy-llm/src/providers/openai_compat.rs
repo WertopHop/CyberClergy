@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::config::ProviderConfig;
 use crate::errors::LlmError;
 use crate::provider::Provider;
-use crate::providers::{map_status, parse_retry_after, transport_error};
+use crate::providers::{map_status, parse_retry_after, transport_error, truncate};
 use crate::types::{ChatRequest, ChatResponse, ProviderId, Usage};
 
 pub struct OpenAiCompatProvider {
@@ -175,10 +175,20 @@ impl Provider for OpenAiCompatProvider {
             return Err(map_status(id, status, retry_after, &body_text));
         }
 
+        // Reading the body first keeps a snippet for the error message; providers
+        // change response shapes without notice, and a bare "decoding failed" is
+        // impossible to act on.
+        let body_text = response
+            .text()
+            .await
+            .map_err(|error| transport_error(id, error, self.timeout))?;
         let payload: ChatCompletionResponse =
-            response.json().await.map_err(|error| LlmError::Parse {
+            serde_json::from_str(&body_text).map_err(|error| LlmError::Parse {
                 provider: id,
-                detail: format!("could not decode the completion: {error}"),
+                detail: format!(
+                    "could not decode the completion: {error}; body: {}",
+                    truncate(&body_text, 300)
+                ),
             })?;
 
         let choice = payload.choices.into_iter().next().ok_or_else(|| LlmError::Parse {

@@ -5,7 +5,9 @@
 
 use std::process::ExitCode;
 
-use cyberclergy_llm::{PrayerGenerator, PrayerSpec, ProviderId, Registry, Settings};
+use cyberclergy_llm::{
+    PrayerGenerator, PrayerSpec, ProfileCatalog, ProviderId, Registry, Settings,
+};
 
 const USAGE: &str = "\
 pray - compose one prayer through CyberClergy's shared system prompt
@@ -14,9 +16,12 @@ USAGE:
   cargo run -p cyberclergy-llm --bin pray -- [OPTIONS]
 
 OPTIONS:
+  --religion <id>     Pray in a built-in religion profile
+  --list-religions    Show the available religion profiles and exit
+  --short             Use the compact length the scheduler uses
   --provider <id>     Use one provider instead of the fallback chain
   --model <name>      Override the model for this run
-  --tradition <text>  Tradition to pray in (for example \"Roman Catholic\")
+  --tradition <text>  Override the tradition description
   --language <text>   Language of the prayer
   --tone <text>       Tone of the prayer
   --length <text>     Length description, in words
@@ -26,12 +31,18 @@ OPTIONS:
   -h, --help          Show this help
 
 PROVIDERS:
-  openrouter, gemini, groq, mistral, cloudflare, nvidia";
+  openrouter, gemini, groq, mistral, cloudflare, nvidia
+
+RELIGIONS:
+  See --list-religions; profiles live in resources/clergy/<id>/.";
 
 #[derive(Debug, Default)]
 struct Args {
     help: bool,
     verbose: bool,
+    short: bool,
+    list_religions: bool,
+    religion: Option<String>,
     provider: Option<ProviderId>,
     model: Option<String>,
     tradition: Option<String>,
@@ -49,6 +60,9 @@ impl Args {
             match argument.as_str() {
                 "-h" | "--help" => args.help = true,
                 "--verbose" => args.verbose = true,
+                "--short" => args.short = true,
+                "--list-religions" => args.list_religions = true,
+                "--religion" => args.religion = Some(next_value(&mut raw, "--religion")?),
                 "--provider" => {
                     let value = next_value(&mut raw, "--provider")?;
                     args.provider = Some(
@@ -70,8 +84,27 @@ impl Args {
         Ok(args)
     }
 
-    fn spec(&self) -> PrayerSpec {
-        let mut spec = PrayerSpec::new();
+    /// Profile defaults first, then explicit CLI overrides on top.
+    fn spec(&self, catalog: &ProfileCatalog) -> Result<PrayerSpec, String> {
+        let base = match &self.religion {
+            Some(id) => {
+                let profile = catalog.get(id).ok_or_else(|| {
+                    format!(
+                        "unknown religion `{id}` (available: {})",
+                        catalog.ids().join(", ")
+                    )
+                })?;
+                profile.prayer_spec_for_length(self.short)
+            }
+            None => {
+                if self.short {
+                    return Err("--short requires --religion".to_string());
+                }
+                PrayerSpec::new()
+            }
+        };
+
+        let mut spec = base;
         if let Some(value) = &self.tradition {
             spec = spec.with_tradition(value.clone());
         }
@@ -90,7 +123,7 @@ impl Args {
         if let Some(value) = &self.name {
             spec = spec.with_user_name(value.clone());
         }
-        spec
+        Ok(spec)
     }
 }
 
@@ -115,6 +148,26 @@ async fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    let catalog = match ProfileCatalog::embedded() {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            eprintln!("could not load the built-in religion profiles: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if args.list_religions {
+        print_religions(&catalog);
+        return ExitCode::SUCCESS;
+    }
+
+    let spec = match args.spec(&catalog) {
+        Ok(spec) => spec,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     let settings = Settings::from_env();
     let registry = match Registry::new(&settings) {
         Ok(registry) => registry,
@@ -131,7 +184,6 @@ async fn main() -> ExitCode {
     }
 
     let generator = PrayerGenerator::new(registry);
-    let spec = args.spec();
     let mut request = match generator.build_request(&spec) {
         Ok(request) => request,
         Err(error) => {
@@ -160,6 +212,23 @@ async fn main() -> ExitCode {
             eprintln!("prayer generation failed: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+fn print_religions(catalog: &ProfileCatalog) {
+    println!(
+        "{:<14} {:<18} {:<16} {:<10} DIRECTIONS",
+        "ID", "NAME (EN)", "NAME (RU)", "PRAYER"
+    );
+    for profile in catalog.list() {
+        println!(
+            "{:<14} {:<18} {:<16} {:<10} every {} s, compact length available with --short",
+            profile.id,
+            profile.localized_name("en"),
+            profile.localized_name("ru"),
+            profile.identity.prayer_term,
+            profile.schedule.interval_seconds
+        );
     }
 }
 

@@ -1,0 +1,22 @@
+{
+  "id": "christianity",
+  "version": 1,
+  "identity": {
+    "names": {
+      "en": "Christianity",
+      "ru": "Христианство"
+    },
+    "tradition": "Christianity, kept broad and without a specific denomination",
+    "prayer_term": "prayer",
+    "closing_formula": "Amen"
+  },
+  "style": {
+    "tone": "reverent, hopeful and warm",
+    "length": "one short paragraph of roughly 60 to 110 words",
+    "short_length": "one or two sentences of roughly 15 to 30 words"
+  },
+  "schedule": {
+    "interval_seconds": 900,
+    "min_interval_seconds": 300
+  }
+}

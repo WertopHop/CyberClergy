@@ -9,6 +9,7 @@
 //! editable prompt in `resources/prompts/system_prompt.md`, so every provider
 //! receives identical instructions.
 
+pub mod clergy;
 pub mod config;
 pub mod errors;
 pub mod generate;
@@ -18,6 +19,7 @@ pub mod providers;
 pub mod redact;
 pub mod types;
 
+pub use clergy::{ProfileCatalog, ProfileError, ReligionProfile};
 pub use config::{
     ProviderConfig, ProviderSpec, ProviderStatus, Protocol, Settings, SharedSettings,
     PROVIDER_SPECS,

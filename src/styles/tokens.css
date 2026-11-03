@@ -1,0 +1,287 @@
+/* Design tokens, theme palettes and the few shared controls. Everything else is
+   expressed through these variables, so a new theme only adds a palette block. */
+
+:root {
+  --font-ui: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", "Georgia", serif;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --titlebar-height: 40px;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  color-scheme: dark;
+}
+
+/* Night: a dark chapel lit by one warm window. */
+:root,
+[data-theme="night"] {
+  color-scheme: dark;
+
+  --bg: #08090f;
+  --bg-elevated: rgba(16, 18, 29, 0.86);
+  --surface: rgba(255, 255, 255, 0.035);
+  --surface-strong: rgba(255, 255, 255, 0.075);
+  --border: rgba(255, 255, 255, 0.085);
+  --border-strong: rgba(255, 255, 255, 0.17);
+
+  --fg: #e9e7f1;
+  --fg-muted: #9c9ab0;
+  --fg-faint: #6f6d82;
+  --accent: #d7b46a;
+  --accent-strong: #f0d18f;
+  --accent-contrast: #1a1408;
+  --danger: #e07070;
+
+  --sky-top: #04050a;
+  --sky-bottom: #1a1b2d;
+  --glow: rgba(255, 178, 92, 0.48);
+  --glow-soft: rgba(255, 168, 92, 0.15);
+
+  --cloud-far: #201f33;
+  --cloud-mid: #2b2b46;
+  --cloud-near: #3a3a58;
+  --cloud-base: #232338;
+  --cloud-lit: rgba(255, 190, 128, 0.3);
+
+  --robot-shell: #dfe3ee;
+  --robot-shell-edge: #8f97ad;
+  --robot-edge: rgba(255, 255, 255, 0.55);
+  --robot-joint: #6a7088;
+  --robot-visor: #101018;
+  --robot-eye: #ffd79a;
+  --robot-emblem: rgba(110, 120, 150, 0.5);
+  --robot-shadow: rgba(0, 0, 0, 0.28);
+
+  --bubble-bg: rgba(12, 13, 20, 0.84);
+  --bubble-border: rgba(255, 215, 154, 0.22);
+  --bubble-text: #efeaf6;
+
+  --error-bg: rgba(32, 15, 17, 0.86);
+  --error-border: rgba(224, 112, 112, 0.34);
+  --error-title: #f0a5a5;
+  --error-text: #e6c8c8;
+}
+
+/* Dawn: the same chapel with the light coming from behind the clouds. */
+[data-theme="dawn"] {
+  color-scheme: light;
+
+  --bg: #eef1f6;
+  --bg-elevated: rgba(255, 255, 255, 0.9);
+  --surface: rgba(22, 30, 50, 0.035);
+  --surface-strong: rgba(22, 30, 50, 0.075);
+  --border: rgba(22, 30, 50, 0.1);
+  --border-strong: rgba(22, 30, 50, 0.2);
+
+  --fg: #1b2130;
+  --fg-muted: #5a6377;
+  --fg-faint: #8a92a5;
+  --accent: #9a6b1f;
+  --accent-strong: #b8862b;
+  --accent-contrast: #fffaf0;
+  --danger: #b0433f;
+
+  --sky-top: #c8d5e8;
+  --sky-bottom: #f5e7d3;
+  --glow: rgba(255, 208, 142, 0.72);
+  --glow-soft: rgba(255, 214, 158, 0.26);
+
+  --cloud-far: #d6deea;
+  --cloud-mid: #e9eef6;
+  --cloud-near: #fbfcff;
+  --cloud-base: #dde4ee;
+  --cloud-lit: rgba(255, 214, 160, 0.5);
+
+  --robot-shell: #ffffff;
+  --robot-shell-edge: #b9c1d2;
+  --robot-edge: rgba(255, 255, 255, 0.9);
+  --robot-joint: #98a1b4;
+  --robot-visor: #2b3143;
+  --robot-eye: #ffb454;
+  --robot-emblem: rgba(90, 100, 125, 0.32);
+  --robot-shadow: rgba(40, 50, 75, 0.16);
+
+  --bubble-bg: rgba(255, 255, 255, 0.94);
+  --bubble-border: rgba(22, 30, 50, 0.12);
+  --bubble-text: #232a3c;
+
+  --error-bg: rgba(38, 22, 22, 0.9);
+  --error-border: rgba(176, 67, 63, 0.36);
+  --error-title: #f2b4b0;
+  --error-text: #e9d2cf;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12.5px;
+  white-space: nowrap;
+  transition:
+    background 160ms var(--ease),
+    border-color 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--surface-strong);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.button--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.button--primary:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+.button--small {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.button--ghost {
+  border-color: transparent;
+  color: var(--fg-faint);
+}
+
+.button--ghost:hover:not(:disabled) {
+  background: transparent;
+  color: var(--danger);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  transition:
+    background 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--surface-strong);
+  color: var(--fg);
+}
+
+.icon-button--small {
+  width: 24px;
+  height: 24px;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.segmented__item {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  transition:
+    background 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.segmented__item:hover {
+  color: var(--fg);
+}
+
+.segmented__item.is-active {
+  background: var(--surface-strong);
+  color: var(--fg);
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(3, 4, 8, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms var(--ease);
+}
+
+.scrim.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sidebar,
+  .sheet {
+    transition: none;
+  }
+}

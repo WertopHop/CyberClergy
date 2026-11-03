@@ -17,8 +17,11 @@
         "width": 1280,
         "height": 840,
         "minWidth": 960,
-        "minHeight": 640,
-        "resizable": true
+        "minHeight": 620,
+        "resizable": true,
+        "decorations": false,
+        "theme": "Dark",
+        "dragDropEnabled": false
       }
     ],
     "security": {

@@ -1,0 +1,391 @@
+/* The chapel: gradient sky, a symmetric cloud mound, praying clerics and the
+   prayer that floats above whoever is speaking. */
+
+.chapel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- clouds */
+
+.clouds {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.clouds__sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-bottom) 100%);
+}
+
+.clouds__glow {
+  position: absolute;
+  top: -30%;
+  right: -14%;
+  width: 84%;
+  aspect-ratio: 1;
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--glow) 0%,
+    var(--glow-soft) 36%,
+    transparent 68%
+  );
+}
+
+.clouds__art {
+  position: absolute;
+  inset: -5%;
+  width: 110%;
+  height: 110%;
+}
+
+.clouds__layer--far {
+  fill: var(--cloud-far);
+}
+
+.clouds__layer--mid {
+  fill: var(--cloud-mid);
+}
+
+.clouds__layer--near {
+  fill: var(--cloud-near);
+}
+
+.clouds__layer--base {
+  fill: var(--cloud-base);
+}
+
+.clouds__layer--lit {
+  fill: var(--cloud-lit);
+}
+
+/* --------------------------------------------------------------- caption */
+
+.chapel__caption {
+  position: relative;
+  z-index: 5;
+  padding: 24px 32px 0;
+}
+
+.chapel__tradition {
+  margin: 0;
+  color: var(--fg);
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.chapel__meta {
+  margin: 4px 0 0;
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------- clerics */
+
+.chapel__stacks {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(4px, 1.6vh, 22px);
+  min-height: 0;
+  padding: 6px 24px 32px;
+}
+
+.chapel__row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(8px, 4vw, 68px);
+}
+
+.chapel__cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.chapel__bubble-slot {
+  position: relative;
+  width: 100%;
+  height: clamp(56px, 9.5vh, 104px);
+}
+
+/* ---------------------------------------------------------------- bubble */
+
+.bubble {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 190px;
+  padding: 10px 12px;
+  border: 1px solid var(--bubble-border);
+  border-radius: 12px;
+  background: var(--bubble-bg);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(10px);
+  animation: bubble-in 520ms var(--ease) both;
+}
+
+.bubble__text {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--bubble-text);
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  line-height: 1.55;
+  text-align: center;
+  word-break: break-word;
+  user-select: text;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+/* ----------------------------------------------------------------- robot */
+
+.robot {
+  width: calc(clamp(64px, 11.5vh, 122px) * var(--robot-scale, 1));
+  flex: none;
+}
+
+.robot__art {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.robot__bob {
+  animation: robot-bob 5.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.robot__shell {
+  fill: var(--robot-shell);
+  stroke: var(--robot-shell-edge);
+  stroke-width: 1.3;
+}
+
+.robot__edge {
+  fill: none;
+  stroke: var(--robot-edge);
+  stroke-width: 1.1;
+  opacity: 0.75;
+}
+
+.robot__joint {
+  fill: var(--robot-joint);
+}
+
+.robot__visor {
+  fill: var(--robot-visor);
+}
+
+.robot__eye {
+  fill: var(--robot-eye);
+}
+
+.robot__wire {
+  stroke: var(--robot-joint);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.robot__tip {
+  fill: var(--robot-eye);
+  animation: tip-pulse 3.4s ease-in-out infinite;
+}
+
+.robot__emblem {
+  fill: none;
+  stroke: var(--robot-emblem);
+  stroke-width: 1.4;
+}
+
+.robot__emblem-mark {
+  stroke: var(--robot-emblem);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.robot__shadow {
+  fill: var(--robot-shadow);
+}
+
+.robot__arm {
+  animation: arm-sway 6.4s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.robot--praying {
+  filter: drop-shadow(0 0 16px var(--glow-soft));
+}
+
+.robot--praying .robot__bob {
+  animation-duration: 4.2s;
+}
+
+.robot--praying .robot__arm {
+  animation-duration: 3.2s;
+}
+
+.robot--praying .robot__eye {
+  animation: eye-glow 2.8s ease-in-out infinite;
+}
+
+@keyframes robot-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3.5px);
+  }
+}
+
+@keyframes arm-sway {
+  0%,
+  100% {
+    transform: rotate(-1.6deg);
+  }
+  50% {
+    transform: rotate(2.6deg);
+  }
+}
+
+@keyframes eye-glow {
+  0%,
+  100% {
+    opacity: 0.82;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes tip-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------ empty state */
+
+.empty-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 8;
+  width: min(380px, 84%);
+  padding: 26px 26px 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(20px);
+}
+
+.empty-card__title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.empty-card__body {
+  margin: 8px 0 18px;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------------ error strip */
+
+.chapel__error {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(720px, calc(100% - 48px));
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-md);
+  background: var(--error-bg);
+  transform: translateX(-50%);
+  backdrop-filter: blur(14px);
+}
+
+.chapel__error-copy {
+  min-width: 0;
+}
+
+.chapel__error-title {
+  display: block;
+  color: var(--error-title);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.chapel__error-text {
+  display: -webkit-box;
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--error-text);
+  font-size: 11.5px;
+  line-height: 1.45;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .robot__bob,
+  .robot__arm,
+  .robot__tip,
+  .bubble {
+    animation: none;
+  }
+
+  .bubble {
+    transform: translateX(-50%);
+  }
+}

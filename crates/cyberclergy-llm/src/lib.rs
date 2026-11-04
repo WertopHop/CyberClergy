@@ -19,7 +19,11 @@ pub mod providers;
 pub mod redact;
 pub mod types;
 
-pub use clergy::{ProfileCatalog, ProfileError, ReligionProfile};
+pub use clergy::intercession::{target_for, MAX_TEXT_CHARS};
+pub use clergy::{
+    Direction, Intercession, IntercessionQueue, IntercessionStatus, IntercessionTask, ProfileCatalog,
+    ProfileError, QueueError, RecordOutcome, ReligionProfile, Severity, SubmitOutcome, Theme,
+};
 pub use config::{
     ProviderConfig, ProviderSpec, ProviderStatus, Protocol, Settings, SharedSettings,
     PROVIDER_SPECS,

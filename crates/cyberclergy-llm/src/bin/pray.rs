@@ -6,7 +6,8 @@
 use std::process::ExitCode;
 
 use cyberclergy_llm::{
-    PrayerGenerator, PrayerSpec, ProfileCatalog, ProviderId, Registry, Settings,
+    target_for, Direction, PrayerGenerator, PrayerSpec, ProfileCatalog, ProviderId, Registry,
+    Settings, MAX_TEXT_CHARS,
 };
 
 const USAGE: &str = "\
@@ -26,9 +27,18 @@ OPTIONS:
   --tone <text>       Tone of the prayer
   --length <text>     Length description, in words
   --intent <text>     What the prayer is about
+  --confession <text> Classify a confessional entry locally and pray in the
+                      direction it suggests (mutually exclusive with --intent)
+  --dry-run           Print the derived direction and exit without a provider
   --name <text>       Name of the person to pray for
   --verbose           Print provider, model and token usage to stderr
   -h, --help          Show this help
+
+CONFESSION:
+  The entry is read on this machine only. The provider receives the derived
+  direction sentence, never the original text. The prayer counter follows the
+  severity: 7 prayers for a pressing need, 5 for a steady one, 3 for a light one,
+  plus one more when the entry is longer than 400 characters.
 
 PROVIDERS:
   openrouter, gemini, groq, mistral, cloudflare, nvidia
@@ -50,6 +60,8 @@ struct Args {
     tone: Option<String>,
     length: Option<String>,
     intent: Option<String>,
+    confession: Option<String>,
+    dry_run: bool,
     name: Option<String>,
 }
 
@@ -77,6 +89,8 @@ impl Args {
                 "--tone" => args.tone = Some(next_value(&mut raw, "--tone")?),
                 "--length" => args.length = Some(next_value(&mut raw, "--length")?),
                 "--intent" => args.intent = Some(next_value(&mut raw, "--intent")?),
+                "--confession" => args.confession = Some(next_value(&mut raw, "--confession")?),
+                "--dry-run" => args.dry_run = true,
                 "--name" => args.name = Some(next_value(&mut raw, "--name")?),
                 other => return Err(format!("unknown argument `{other}`")),
             }
@@ -84,8 +98,13 @@ impl Args {
         Ok(args)
     }
 
-    /// Profile defaults first, then explicit CLI overrides on top.
-    fn spec(&self, catalog: &ProfileCatalog) -> Result<PrayerSpec, String> {
+    /// Profile defaults first, then explicit CLI overrides on top. `intent`
+    /// carries the direction derived from a confessional entry.
+    fn spec(
+        &self,
+        catalog: &ProfileCatalog,
+        intent: Option<String>,
+    ) -> Result<PrayerSpec, String> {
         let base = match &self.religion {
             Some(id) => {
                 let profile = catalog.get(id).ok_or_else(|| {
@@ -117,8 +136,8 @@ impl Args {
         if let Some(value) = &self.length {
             spec = spec.with_length(value.clone());
         }
-        if let Some(value) = &self.intent {
-            spec = spec.with_intent(value.clone());
+        if let Some(value) = intent.or_else(|| self.intent.clone()) {
+            spec = spec.with_intent(value);
         }
         if let Some(value) = &self.name {
             spec = spec.with_user_name(value.clone());
@@ -160,7 +179,54 @@ async fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let spec = match args.spec(&catalog) {
+    if args.confession.is_some() && args.intent.is_some() {
+        eprintln!("error: --confession and --intent are mutually exclusive");
+        return ExitCode::FAILURE;
+    }
+
+    let direction = match args.confession.as_deref() {
+        Some(text) if text.trim().is_empty() => {
+            eprintln!("error: --confession needs a non-empty text");
+            return ExitCode::FAILURE;
+        }
+        Some(text) => {
+            let characters = text.trim().chars().count();
+            let direction = Direction::derive(text);
+            eprintln!(
+                "[direction: {} | severity: {} | target: {} prayers]",
+                direction.theme.as_str(),
+                direction.severity.as_str(),
+                target_for(direction.severity, characters)
+            );
+            if characters > MAX_TEXT_CHARS {
+                eprintln!(
+                    "[note: the entry is longer than the confessional limit of {MAX_TEXT_CHARS} characters]"
+                );
+            }
+            eprintln!("[intent: {}]", direction.intent);
+            Some(direction)
+        }
+        None => None,
+    };
+
+    if args.dry_run {
+        let intent = direction
+            .as_ref()
+            .map(|direction| direction.intent.clone())
+            .or_else(|| args.intent.clone());
+        return match intent {
+            Some(intent) => {
+                println!("{intent}");
+                ExitCode::SUCCESS
+            }
+            None => {
+                eprintln!("error: --dry-run needs --confession or --intent");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    let spec = match args.spec(&catalog, direction.map(|direction| direction.intent)) {
         Ok(spec) => spec,
         Err(message) => {
             eprintln!("error: {message}");

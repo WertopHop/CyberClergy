@@ -186,6 +186,22 @@ fn finished_entries_are_pruned_but_active_ones_stay() {
 }
 
 #[test]
+fn forgetting_finished_entries_keeps_the_owed_ones() {
+    let mut queue = IntercessionQueue::new(1);
+    let entry = queue.submit(WORK, 10).expect("valid").entry;
+    for prayer in 0..entry.prayers_target {
+        queue.record_prayer(&entry.id, 20 + i64::from(prayer));
+    }
+    let active = queue.submit("одиноко и никто не звонит", 30).expect("valid").entry;
+    let cancelled = queue.submit(&format!("{GUILT} 2"), 40).expect("valid").entry;
+    queue.cancel(&cancelled.id);
+
+    assert_eq!(queue.forget_finished(), 2);
+    assert_eq!(queue.entries().len(), 1);
+    assert_eq!(queue.entries()[0].id, active.id);
+}
+
+#[test]
 fn target_grows_with_severity_and_length() {
     assert_eq!(target_for(Severity::Gentle, 40), 3);
     assert_eq!(target_for(Severity::Steady, 200), 5);

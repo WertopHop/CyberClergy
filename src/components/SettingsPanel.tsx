@@ -1,10 +1,15 @@
 // Right-hand settings sheet. Providers are edited one at a time: each row can be
 // expanded, its credentials replaced, verified with a live request, or forgotten.
-import { useState } from "react";
+// The sheet also shows how the chapel keeps its rhythm and what the journal has
+// counted so far.
+import { useEffect, useState } from "react";
 
 import type { Translate } from "../i18n";
-import { checkProvider, clearProvider, saveProviderField } from "../lib/bridge";
+import { checkProvider, clearProvider, prayerStats, saveProviderField } from "../lib/bridge";
 import type {
+  ChapelStatus,
+  Pace,
+  PrayerStats,
   Preferences,
   ProviderField,
   ProviderId,
@@ -15,6 +20,14 @@ import { IconChevron, IconClose } from "./Icons";
 
 const MIN_CLERICS = 3;
 const MAX_CLERICS = 9;
+const PROVIDER_IDS: ProviderId[] = [
+  "openrouter",
+  "gemini",
+  "groq",
+  "mistral",
+  "cloudflare",
+  "nvidia",
+];
 
 interface SettingsPanelProps {
   t: Translate;
@@ -24,8 +37,8 @@ interface SettingsPanelProps {
   onChange: (patch: Partial<Preferences>) => void;
   providers: ProviderView[];
   religions: ReligionProfile[];
+  status: ChapelStatus | null;
   onProviders: (providers: ProviderView[]) => void;
-  onResetPrayers: () => void;
 }
 
 function providerLabel(id: ProviderId, t: Translate): string {
@@ -45,6 +58,15 @@ function providerLabel(id: ProviderId, t: Translate): string {
     default:
       return id;
   }
+}
+
+/** Journal rows name networks by their id; the quiet canon is not a network. */
+function providerName(id: string, t: Translate): string {
+  if (id === "quiet") {
+    return t("statsProviderQuiet");
+  }
+  const known = PROVIDER_IDS.find((candidate) => candidate === id);
+  return known ? providerLabel(known, t) : id;
 }
 
 function fieldLabel(name: string, t: Translate): string {
@@ -99,7 +121,6 @@ interface ProviderRowProps {
   expanded: boolean;
   onToggle: () => void;
   onProviders: (providers: ProviderView[]) => void;
-  onResetPrayers: () => void;
 }
 
 function ProviderRow({
@@ -108,7 +129,6 @@ function ProviderRow({
   expanded,
   onToggle,
   onProviders,
-  onResetPrayers,
 }: ProviderRowProps) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -129,7 +149,6 @@ function ProviderRow({
       onProviders(updated);
       updateDraft(field.name, "");
       setNotice(t("saved"));
-      onResetPrayers();
     } catch (error) {
       setNotice(String(error));
     } finally {
@@ -143,7 +162,6 @@ function ProviderRow({
       const updated = await clearProvider(provider.id);
       onProviders(updated);
       setNotice(null);
-      onResetPrayers();
     } catch (error) {
       setNotice(String(error));
     } finally {
@@ -250,6 +268,78 @@ function ProviderRow({
   );
 }
 
+function StatsGroup({ t, open }: { t: Translate; open: boolean }) {
+  const [stats, setStats] = useState<PrayerStats | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    let active = true;
+    prayerStats()
+      .then((loaded) => {
+        if (active) {
+          setStats(loaded);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
+  return (
+    <section className="group">
+      <h3 className="group__title">{t("settingsStats")}</h3>
+      <p className="group__hint">{t("settingsStatsHint")}</p>
+
+      {!stats || stats.total === 0 ? (
+        <p className="stats__empty">{t("statsEmpty")}</p>
+      ) : (
+        <>
+          <div className="stats">
+            <div className="stats__cell">
+              <span className="stats__value">{stats.today}</span>
+              <span className="stats__label">{t("statsLastDay")}</span>
+            </div>
+            <div className="stats__cell">
+              <span className="stats__value">{stats.total}</span>
+              <span className="stats__label">{t("statsTotal")}</span>
+            </div>
+            <div className="stats__cell">
+              <span className="stats__value">
+                {stats.prompt_tokens + stats.completion_tokens}
+              </span>
+              <span className="stats__label">{t("statsTokens")}</span>
+            </div>
+            <div className="stats__cell">
+              <span className="stats__value">
+                {t("statsMs", { ms: stats.average_ms })}
+              </span>
+              <span className="stats__label">{t("statsLatency")}</span>
+            </div>
+          </div>
+
+          {stats.failures > 0 ? (
+            <p className="stats__failures">
+              {t("statsFailures")}: {stats.failures}
+            </p>
+          ) : null}
+
+          <ul className="stats__providers">
+            {stats.providers.map((share) => (
+              <li className="stats__provider" key={share.provider}>
+                <span>{providerName(share.provider, t)}</span>
+                <span className="stats__provider-count">{share.prayers}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function SettingsPanel({
   t,
   open,
@@ -258,8 +348,8 @@ export function SettingsPanel({
   onChange,
   providers,
   religions,
+  status,
   onProviders,
-  onResetPrayers,
 }: SettingsPanelProps) {
   const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(
     null,
@@ -307,9 +397,16 @@ export function SettingsPanel({
                     )
                   }
                   onProviders={onProviders}
-                  onResetPrayers={onResetPrayers}
                 />
               ))}
+            </div>
+            <div className="row">
+              <span className="row__label">{t("settingsStorage")}</span>
+              <span className="row__value">
+                {status?.storage === "keychain"
+                  ? t("storageKeychain")
+                  : t("storageFile")}
+              </span>
             </div>
           </section>
 
@@ -389,7 +486,22 @@ export function SettingsPanel({
                 </button>
               </div>
             </div>
+            <div className="row">
+              <span className="row__label">{t("pace")}</span>
+              <Segmented<Pace>
+                value={preferences.pace}
+                options={[
+                  { value: "calm", label: t("paceCalm") },
+                  { value: "normal", label: t("paceNormal") },
+                  { value: "lively", label: t("paceLively") },
+                ]}
+                onChange={(pace) => onChange({ pace })}
+              />
+            </div>
+            <p className="row__hint">{t("paceHint")}</p>
           </section>
+
+          <StatsGroup t={t} open={open} />
         </div>
       </section>
     </>

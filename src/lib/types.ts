@@ -1,5 +1,5 @@
-// Mirrors of the payloads the Rust commands return. Keeping them in one file
-// makes a shape change on the backend a single place to update here.
+// Mirrors of the payloads the Rust commands and events use. Keeping them in one
+// file makes a shape change on the backend a single place to update here.
 
 export type ProviderId =
   | "openrouter"
@@ -12,7 +12,7 @@ export type ProviderId =
 export interface ProviderField {
   /** Environment-style variable name, for example `OPENROUTER_API_KEY`. */
   name: string;
-  /** Whether a value is already known (from `.env` or the settings file). */
+  /** Whether a value is already known (from `.env` or the secret store). */
   set: boolean;
 }
 
@@ -23,11 +23,15 @@ export interface ProviderView {
   fields: ProviderField[];
 }
 
+/** How often the cloud prays, relative to the tradition's schedule. */
+export type Pace = "calm" | "normal" | "lively";
+
 export interface Preferences {
   language: string;
   theme: string;
   religion: string;
   clerics: number;
+  pace: Pace;
 }
 
 export interface PrayerOutcome {
@@ -66,8 +70,123 @@ export interface ReligionProfile {
   addendum?: string;
 }
 
-export interface Confession {
+/** Mood of the chapel, derived from failures, cooldowns and the hourly budget. */
+export type Tempo = "steady" | "cautious" | "resting" | "offline";
+
+export interface Meter {
+  done: number;
+  limit: number;
+  /** Seconds until the hourly window slides and the counter starts over. */
+  resets_in_secs: number;
+}
+
+export interface ChapelStatus {
+  tempo: Tempo;
+  /** Active confessional entries still owed prayers. */
+  pending: number;
+  fulfilled: number;
+  budget: Meter;
+  cooldown_secs: number;
+  failures: number;
+  configured: boolean;
+  storage: "keychain" | "file";
+  error: string | null;
+  next_in_secs: number | null;
+}
+
+export type PrayerSource = "schedule" | "intercession" | "quiet";
+
+export type ThemeId =
+  | "guilt"
+  | "grief"
+  | "illness"
+  | "gratitude"
+  | "family"
+  | "habit"
+  | "work"
+  | "anger"
+  | "fear"
+  | "loneliness"
+  | "doubt"
+  | "unnamed";
+
+export type Severity = "urgent" | "steady" | "gentle";
+
+/** Payload of `chapel://prayer`. */
+export interface PrayerEvent {
+  cleric: number;
+  text: string;
+  source: PrayerSource;
+  provider: ProviderId | null;
+  model: string | null;
+  theme: ThemeId | null;
+  severity: Severity | null;
+  ordinal: number | null;
+  target: number | null;
+  intercession_id: string | null;
+  elapsed_ms: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  /** Unix timestamp in milliseconds. */
+  at: number;
+}
+
+export type IntercessionStatus = "queued" | "fulfilled" | "cancelled";
+
+/** One entry of the confessional queue, persisted in `confessions.json`. */
+export interface ConfessionEntry {
   id: string;
   text: string;
-  createdAt: number;
+  created_at: number;
+  theme: ThemeId;
+  severity: Severity;
+  /** English direction handed to the prompt; the entry text never leaves. */
+  direction: string;
+  cleric: number;
+  prayers_done: number;
+  prayers_target: number;
+  status: IntercessionStatus;
+  last_prayed_at: number | null;
+}
+
+export interface ConfessionOutcome {
+  entry: ConfessionEntry;
+  duplicate: boolean;
+}
+
+export interface ProviderShare {
+  provider: string;
+  prayers: number;
+  tokens: number;
+}
+
+export interface PrayerStats {
+  total: number;
+  /** Successful prayers in the last 24 hours. */
+  today: number;
+  failures: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  average_ms: number;
+  providers: ProviderShare[];
+}
+
+/** One row of the local prayer journal. */
+export interface PrayerRecord {
+  created_at: number;
+  religion: string;
+  provider: ProviderId | null;
+  model: string | null;
+  cleric: number;
+  source: PrayerSource;
+  intercession_id: string | null;
+  theme: ThemeId | null;
+  ordinal: number | null;
+  target: number | null;
+  text: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  elapsed_ms: number;
+  ok: boolean;
+  error: string | null;
 }

@@ -11,6 +11,13 @@ use crate::prompts::PrayerSpec;
 
 pub const PROFILE_FILE: &str = "profile.json";
 pub const ADDENDUM_FILE: &str = "prompt_addendum.md";
+/// Prayers used while the networks are silent. Kept in the profile folder so a
+/// new tradition brings its own canon without touching code.
+pub const OFFLINE_FILE: &str = "offline.json";
+
+/// Longest entry accepted in the offline canon; the chapel shows it in a small
+/// bubble, so a paragraph is already too much.
+const MAX_OFFLINE_PRAYER_CHARS: usize = 400;
 
 /// Compile-time table of bundled profiles. Adding a religion means creating a
 /// folder under `resources/clergy/` and one row here; nothing is read from disk
@@ -19,6 +26,7 @@ struct BuiltinProfile {
     id: &'static str,
     json: &'static str,
     addendum: &'static str,
+    offline: &'static str,
 }
 
 const BUILTIN_PROFILES: &[BuiltinProfile] = &[
@@ -26,16 +34,19 @@ const BUILTIN_PROFILES: &[BuiltinProfile] = &[
         id: "judaism",
         json: include_str!("../../resources/clergy/judaism/profile.json"),
         addendum: include_str!("../../resources/clergy/judaism/prompt_addendum.md"),
+        offline: include_str!("../../resources/clergy/judaism/offline.json"),
     },
     BuiltinProfile {
         id: "christianity",
         json: include_str!("../../resources/clergy/christianity/profile.json"),
         addendum: include_str!("../../resources/clergy/christianity/prompt_addendum.md"),
+        offline: include_str!("../../resources/clergy/christianity/offline.json"),
     },
     BuiltinProfile {
         id: "islam",
         json: include_str!("../../resources/clergy/islam/profile.json"),
         addendum: include_str!("../../resources/clergy/islam/prompt_addendum.md"),
+        offline: include_str!("../../resources/clergy/islam/offline.json"),
     },
 ];
 
@@ -51,6 +62,50 @@ pub struct ReligionProfile {
     /// Loaded from `prompt_addendum.md` next to the profile, never from JSON.
     #[serde(skip)]
     pub addendum: String,
+    /// Loaded from `offline.json` next to the profile, never from JSON.
+    #[serde(skip)]
+    pub offline: OfflineCanon,
+}
+
+/// Short prayers of a tradition, used when no network can be reached.
+///
+/// They are intentionally generic: while the chapel is offline it does not know
+/// what the person is carrying, so it prays the words the tradition already
+/// agrees on instead of inventing anything.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct OfflineCanon {
+    /// Format version of `offline.json`, mirroring `profile.json`.
+    pub version: u32,
+    /// Language tag (`en`, `ru`, ...) mapped to its prayers.
+    pub prayers: BTreeMap<String, Vec<String>>,
+}
+
+impl OfflineCanon {
+    pub fn is_empty(&self) -> bool {
+        self.prayers.values().all(Vec::is_empty)
+    }
+
+    pub fn len(&self, language: &str) -> usize {
+        self.prayers.get(language).map(Vec::len).unwrap_or(0)
+    }
+
+    /// Picks a prayer by rotation, falling back to English and finally to the
+    /// first non-empty list, so an unknown interface language still prays.
+    pub fn pick(&self, language: &str, rotation: u64) -> Option<&str> {
+        let list = self
+            .prayers
+            .get(language)
+            .filter(|prayers| !prayers.is_empty())
+            .or_else(|| {
+                self.prayers
+                    .get("en")
+                    .filter(|prayers| !prayers.is_empty())
+            })
+            .or_else(|| self.prayers.values().find(|prayers| !prayers.is_empty()))?;
+        let index = (rotation % list.len() as u64) as usize;
+        list.get(index).map(String::as_str)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,6 +201,13 @@ impl ReligionProfile {
         self.prayer_spec_for_length(true)
     }
 
+    /// A prayer from the tradition's own canon, for the quiet hours when the
+    /// networks cannot be reached. `rotation` walks the list so the chapel does
+    /// not repeat the same words forever.
+    pub fn quiet_prayer(&self, language: &str, rotation: u64) -> Option<&str> {
+        self.offline.pick(language, rotation)
+    }
+
     pub fn prayer_spec_for_length(&self, short: bool) -> PrayerSpec {
         let length = if short {
             &self.style.short_length
@@ -201,6 +263,28 @@ impl ReligionProfile {
                 return Err(invalid(format!("{field} must not be blank")));
             }
         }
+        if self.offline.prayers.get("en").map(Vec::is_empty).unwrap_or(true) {
+            return Err(invalid(
+                "offline.json must contain at least one English prayer".to_string(),
+            ));
+        }
+        for (language, prayers) in &self.offline.prayers {
+            for (index, prayer) in prayers.iter().enumerate() {
+                let trimmed = prayer.trim();
+                if trimmed.is_empty() {
+                    return Err(invalid(format!(
+                        "offline.json has an empty {language} prayer at position {}",
+                        index + 1
+                    )));
+                }
+                if trimmed.chars().count() > MAX_OFFLINE_PRAYER_CHARS {
+                    return Err(invalid(format!(
+                        "offline.json {language} prayer {} is longer than {MAX_OFFLINE_PRAYER_CHARS} characters",
+                        index + 1
+                    )));
+                }
+            }
+        }
         if self.schedule.min_interval_seconds < 60 {
             return Err(invalid(
                 "schedule.min_interval_seconds must be at least 60".to_string(),
@@ -232,7 +316,12 @@ impl ProfileCatalog {
     pub fn embedded() -> Result<Self, ProfileError> {
         let mut catalog = Self::default();
         for builtin in BUILTIN_PROFILES {
-            let profile = parse_profile(builtin.json, builtin.addendum, builtin.id)?;
+            let profile = parse_profile(
+                builtin.json,
+                builtin.addendum,
+                builtin.offline,
+                builtin.id,
+            )?;
             if profile.id != builtin.id {
                 return Err(ProfileError::Validation {
                     id: profile.id,
@@ -244,7 +333,8 @@ impl ProfileCatalog {
         Ok(catalog)
     }
 
-    /// Reads `profile.json` and `prompt_addendum.md` from every subdirectory.
+    /// Reads `profile.json`, `prompt_addendum.md` and `offline.json` from every
+    /// subdirectory.
     pub fn load_dir(directory: &Path) -> Result<Vec<ReligionProfile>, ProfileError> {
         let entries = fs::read_dir(directory).map_err(|error| ProfileError::MissingFile {
             path: directory.to_path_buf(),
@@ -266,10 +356,10 @@ impl ProfileCatalog {
                 .and_then(|name| name.to_str())
                 .unwrap_or_default()
                 .to_string();
-
             let profile = parse_profile(
                 &read_text(&folder.join(PROFILE_FILE))?,
                 &read_text(&folder.join(ADDENDUM_FILE))?,
+                &read_text(&folder.join(OFFLINE_FILE))?,
                 &folder_name,
             )?;
             if profile.id != folder_name {
@@ -334,6 +424,7 @@ impl ProfileCatalog {
 fn parse_profile(
     json: &str,
     addendum: &str,
+    offline: &str,
     expected_id: &str,
 ) -> Result<ReligionProfile, ProfileError> {
     let mut profile: ReligionProfile =
@@ -342,8 +433,18 @@ fn parse_profile(
             detail: error.to_string(),
         })?;
     profile.addendum = addendum.trim().to_string();
+    profile.offline = parse_offline(offline, expected_id)?;
     profile.validate()?;
     Ok(profile)
+}
+
+fn parse_offline(json: &str, expected_id: &str) -> Result<OfflineCanon, ProfileError> {
+    let canon: OfflineCanon =
+        serde_json::from_str(json).map_err(|error| ProfileError::InvalidJson {
+            id: expected_id.to_string(),
+            detail: format!("offline.json: {error}"),
+        })?;
+    Ok(canon)
 }
 
 fn read_text(path: &Path) -> Result<String, ProfileError> {

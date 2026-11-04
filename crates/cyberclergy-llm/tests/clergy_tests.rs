@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cyberclergy_llm::clergy::{ProfileCatalog, ProfileError, ADDENDUM_FILE, PROFILE_FILE};
+use cyberclergy_llm::clergy::{
+    ProfileCatalog, ProfileError, ADDENDUM_FILE, OFFLINE_FILE, PROFILE_FILE,
+};
 use cyberclergy_llm::{build_prayer_request, PromptTemplate};
 
 fn embedded() -> ProfileCatalog {
@@ -16,11 +18,17 @@ fn temp_dir(name: &str) -> PathBuf {
     directory
 }
 
+const OFFLINE_CANON: &str = r#"{
+  "version": 1,
+  "prayers": { "en": ["A short quiet prayer."] }
+}"#;
+
 fn write_profile(directory: &Path, folder: &str, json: &str, addendum: &str) -> PathBuf {
     let path = directory.join(folder);
     fs::create_dir_all(&path).expect("profile folder is created");
     fs::write(path.join(PROFILE_FILE), json).expect("profile json is written");
     fs::write(path.join(ADDENDUM_FILE), addendum).expect("addendum is written");
+    fs::write(path.join(OFFLINE_FILE), OFFLINE_CANON).expect("offline canon is written");
     path
 }
 
@@ -81,6 +89,23 @@ fn builtin_profiles_are_localised_and_valid() {
             .unwrap_or_else(|error| panic!("profile {} is invalid: {error}", profile.id));
         assert!(!profile.addendum.trim().is_empty());
     }
+}
+
+#[test]
+fn quiet_canon_follows_the_language_and_rotates() {
+    let catalog = embedded();
+    let profile = catalog.get("christianity").expect("christianity is embedded");
+
+    let first = profile.quiet_prayer("ru", 0).expect("russian canon exists");
+    assert!(first.contains("Господи"), "the canon is translated");
+    assert_ne!(first, profile.quiet_prayer("ru", 1).expect("a second prayer exists"));
+
+    // An unknown interface language still prays, in English.
+    assert_eq!(
+        profile.quiet_prayer("de", 0),
+        profile.quiet_prayer("en", 0)
+    );
+    assert!(profile.offline.len("ru") >= 3);
 }
 
 #[test]

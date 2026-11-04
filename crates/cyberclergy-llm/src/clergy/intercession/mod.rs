@@ -311,6 +311,15 @@ impl IntercessionQueue {
         })
     }
 
+    /// Deletes every finished entry, text included. This is the explicit
+    /// "forget" action: the person asked for their words to be gone, not just
+    /// archived.
+    pub fn forget_finished(&mut self) -> usize {
+        let before = self.entries.len();
+        self.entries.retain(Intercession::is_active);
+        before - self.entries.len()
+    }
+
     /// Drops finished entries beyond `keep`, oldest first. Keeps the persisted
     /// file bounded without touching anything still owed.
     pub fn prune_finished(&mut self, keep: usize) -> usize {

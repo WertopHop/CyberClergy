@@ -10,12 +10,11 @@
 //! Writes are atomic (temporary file plus rename) and, on Unix, the file is kept
 //! readable by its owner only. Moving the secrets to the OS keychain stays on the
 //! roadmap; this module is the single place that would change.
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cyberclergy_llm::{ProviderId, ProviderSpec, PROVIDER_SPECS};
+use cyberclergy_llm::{Pace, ProviderId, ProviderSpec, PROVIDER_SPECS};
 use serde::{Deserialize, Serialize};
 
 pub const SETTINGS_FILE: &str = "settings.json";
@@ -39,6 +38,8 @@ pub struct Preferences {
     pub religion: String,
     /// Number of clerics standing on the cloud.
     pub clerics: usize,
+    /// How often the cloud prays: `calm`, `normal` or `lively`.
+    pub pace: String,
 }
 
 impl Default for Preferences {
@@ -48,11 +49,17 @@ impl Default for Preferences {
             theme: DEFAULT_THEME.to_string(),
             religion: DEFAULT_RELIGION.to_string(),
             clerics: DEFAULT_CLERICS,
+            pace: Pace::default().as_str().to_string(),
         }
     }
 }
 
 impl Preferences {
+    /// The stored pace, coerced to the default when the file was edited by hand.
+    pub fn pace(&self) -> Pace {
+        Pace::parse(&self.pace).unwrap_or_default()
+    }
+
     /// Coerces out-of-range values instead of rejecting them: a typo in a
     /// hand-edited file must never keep the chapel from opening.
     pub fn sanitized(mut self) -> Self {
@@ -69,6 +76,7 @@ impl Preferences {
             religion
         };
         self.clerics = self.clerics.clamp(MIN_CLERICS, MAX_CLERICS);
+        self.pace = self.pace().as_str().to_string();
         self
     }
 }
@@ -128,6 +136,19 @@ impl PrefsStore {
         self.persist()
     }
 
+    /// Credentials physically present in the file (the keychain backend keeps
+    /// its own copy, see [`crate::secrets`]).
+    pub fn keys(&self) -> BTreeMap<String, String> {
+        self.file.keys.clone()
+    }
+
+    pub fn remove_key(&mut self, variable: &str) -> Result<(), String> {
+        if self.file.keys.remove(variable).is_some() {
+            self.persist()?;
+        }
+        Ok(())
+    }
+
     /// Forgets every credential belonging to one provider.
     pub fn clear_provider(&mut self, id: ProviderId) -> Result<(), String> {
         let spec = ProviderSpec::from_id(id);
@@ -138,34 +159,38 @@ impl PrefsStore {
         self.persist()
     }
 
-    /// Stored credentials, meant to be merged over the process environment.
-    pub fn env_overrides(&self) -> BTreeMap<String, String> {
-        self.file.keys.clone()
-    }
-
     fn persist(&self) -> Result<(), String> {
-        if let Some(parent) = self.path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent).map_err(|error| {
-                    format!("cannot create the settings directory {}: {error}", parent.display())
-                })?;
-            }
-        }
-
-        let json = serde_json::to_string_pretty(&self.file)
-            .map_err(|error| format!("cannot encode the settings file: {error}"))?;
-
-        // Writing to a sibling file first means a crash mid-write cannot leave a
-        // truncated settings file behind.
-        let temporary = self.path.with_extension("json.tmp");
-        fs::write(&temporary, json)
-            .map_err(|error| format!("cannot write {}: {error}", temporary.display()))?;
-        restrict_permissions(&temporary)?;
-        fs::rename(&temporary, &self.path)
-            .map_err(|error| format!("cannot replace {}: {error}", self.path.display()))?;
-        Ok(())
+        write_json_atomic(&self.path, &self.file)
     }
 }
+
+/// Writes pretty JSON through a temporary sibling file and renames it into
+/// place. A crash mid-write therefore cannot truncate the real file; on Unix the
+/// result is readable by its owner only.
+pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "cannot create the directory {}: {error}",
+                    parent.display()
+                )
+            })?;
+        }
+    }
+
+    let json = serde_json::to_string_pretty(value)
+        .map_err(|error| format!("cannot encode {}: {error}", path.display()))?;
+
+    let temporary = path.with_extension("json.tmp");
+    fs::write(&temporary, json)
+        .map_err(|error| format!("cannot write {}: {error}", temporary.display()))?;
+    restrict_permissions(&temporary)?;
+    fs::rename(&temporary, path)
+        .map_err(|error| format!("cannot replace {}: {error}", path.display()))?;
+    Ok(())
+}
+
 
 /// True for the API key and for every extra variable a provider requires.
 pub fn is_known_variable(variable: &str) -> bool {
@@ -226,6 +251,7 @@ mod tests {
             theme: "neon".to_string(),
             religion: "  ".to_string(),
             clerics: 500,
+            pace: "hectic".to_string(),
         }
         .sanitized();
 
@@ -233,6 +259,7 @@ mod tests {
         assert_eq!(preferences.theme, DEFAULT_THEME);
         assert_eq!(preferences.religion, DEFAULT_RELIGION);
         assert_eq!(preferences.clerics, MAX_CLERICS);
+        assert_eq!(preferences.pace, "normal");
     }
 
     #[test]
@@ -245,6 +272,7 @@ mod tests {
                 theme: "dawn".to_string(),
                 religion: "islam".to_string(),
                 clerics: 5,
+                pace: "Calm".to_string(),
             })
             .expect("preferences are writable");
         store
@@ -254,8 +282,10 @@ mod tests {
         let reloaded = PrefsStore::open(&path);
         assert_eq!(reloaded.preferences().religion, "islam");
         assert_eq!(reloaded.preferences().theme, "dawn");
+        // The pace is stored in its canonical spelling, whatever was typed.
+        assert_eq!(reloaded.preferences().pace, "calm");
         assert_eq!(
-            reloaded.env_overrides().get("OPENROUTER_API_KEY"),
+            reloaded.keys().get("OPENROUTER_API_KEY"),
             Some(&"sk-test-value".to_string())
         );
 
@@ -266,7 +296,7 @@ mod tests {
     fn unrelated_variables_are_rejected() {
         let mut store = PrefsStore::open(temp_path("rejected"));
         assert!(store.set_key("PATH", "/usr/bin").is_err());
-        assert!(store.env_overrides().is_empty());
+        assert!(store.keys().is_empty());
     }
 
     #[test]
@@ -283,7 +313,23 @@ mod tests {
             .clear_provider(ProviderId::Cloudflare)
             .expect("clearing is writable");
 
-        assert!(store.env_overrides().is_empty());
+        assert!(store.keys().is_empty());
+        let _ = fs::remove_dir_all(path.parent().unwrap_or(&path));
+    }
+
+    #[test]
+    fn a_migrated_key_can_be_dropped_from_the_file() {
+        let path = temp_path("migrate");
+        let mut store = PrefsStore::open(&path);
+        store
+            .set_key("GROQ_API_KEY", "gsk-test")
+            .expect("the key is written");
+        store
+            .remove_key("GROQ_API_KEY")
+            .expect("the key is dropped");
+
+        assert!(store.keys().is_empty());
+        assert!(PrefsStore::open(&path).keys().is_empty());
         let _ = fs::remove_dir_all(path.parent().unwrap_or(&path));
     }
 }

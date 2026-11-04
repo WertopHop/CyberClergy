@@ -7,16 +7,19 @@
 //! profile with the same id.
 //!
 //! The intercession module owns the entries a person writes down and the limited
-//! number of prayers owed to each of them.
+//! number of prayers owed to each of them; the scheduler module owns the rhythm
+//! the chapel prays to.
 
 pub mod intercession;
 mod profile;
+pub mod scheduler;
 
 pub use intercession::{
     Direction, Intercession, IntercessionQueue, IntercessionStatus, IntercessionTask, QueueError,
     RecordOutcome, Severity, SubmitOutcome, Theme,
 };
 pub use profile::{
-    Identity, ProfileCatalog, ProfileError, ReligionProfile, Schedule, Style, ADDENDUM_FILE,
-    PROFILE_FILE,
+    Identity, OfflineCanon, ProfileCatalog, ProfileError, ReligionProfile, Schedule, Style,
+    ADDENDUM_FILE, OFFLINE_FILE, PROFILE_FILE,
 };
+pub use scheduler::{Cadence, Health, Meter, Pace, Policy, Tempo};

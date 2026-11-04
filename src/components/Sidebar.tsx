@@ -1,39 +1,74 @@
-// Slide-out left panel: the confessional. Entries are stored locally and the
-// scheduling of prayer over them arrives with the scheduler stage.
+// Slide-out left panel: the confessional. Entries are owned by Rust: the queue
+// assigns each one to a cleric, the scheduler counts prayers down, and the list
+// is re-read on a slow poll so the counters move while the drawer is open.
 import { useState } from "react";
 
 import type { Translate } from "../i18n";
-import type { Confession } from "../lib/types";
+import type { ConfessionEntry, IntercessionStatus } from "../lib/types";
 import { IconClose, IconFlame, IconGear, IconTrash } from "./Icons";
+
+const MAX_LENGTH = 1000;
 
 interface SidebarProps {
   t: Translate;
   open: boolean;
   onClose: () => void;
-  confessions: Confession[];
-  onAdd: (text: string) => void;
-  onRemove: (id: string) => void;
+  entries: ConfessionEntry[];
+  busy: boolean;
+  notice: "duplicate" | null;
+  error: string | null;
+  onAdd: (text: string) => Promise<boolean>;
+  onCancel: (id: string) => void;
+  onForget: () => void;
   onOpenSettings: () => void;
+}
+
+function statusLabel(status: IntercessionStatus, t: Translate): string {
+  switch (status) {
+    case "fulfilled":
+      return t("confessionalDone");
+    case "cancelled":
+      return t("confessionalCancelled");
+    default:
+      return t("confessionalPending");
+  }
+}
+
+function progress(entry: ConfessionEntry): number {
+  if (entry.prayers_target <= 0) {
+    return 0;
+  }
+  return Math.min(100, Math.round((entry.prayers_done / entry.prayers_target) * 100));
 }
 
 export function Sidebar({
   t,
   open,
   onClose,
-  confessions,
+  entries,
+  busy,
+  notice,
+  error,
   onAdd,
-  onRemove,
+  onCancel,
+  onForget,
   onOpenSettings,
 }: SidebarProps) {
   const [draft, setDraft] = useState("");
 
-  const submit = () => {
-    if (!draft.trim()) {
+  const submit = async () => {
+    if (!draft.trim() || busy) {
       return;
     }
-    onAdd(draft);
-    setDraft("");
+    const accepted = await onAdd(draft);
+    if (accepted) {
+      setDraft("");
+    }
   };
+
+  // Newest first: the last thing written is the one still on the person's mind.
+  const ordered = [...entries].reverse();
+  const hasFinished = entries.some((entry) => entry.status !== "queued");
 
   return (
     <>
@@ -68,29 +103,72 @@ export function Sidebar({
           </button>
         </header>
 
+        {hasFinished ? (
+          <div className="sidebar__toolbar">
+            <button
+              type="button"
+              className="button button--small button--ghost"
+              disabled={busy}
+              onClick={onForget}
+            >
+              {t("confessionalForget")}
+            </button>
+          </div>
+        ) : null}
+
         <div className="sidebar__list">
-          {confessions.length === 0 ? (
+          {ordered.length === 0 ? (
             <p className="sidebar__empty">{t("confessionalEmpty")}</p>
           ) : (
-            confessions.map((entry) => (
-              <article className="confession" key={entry.id}>
-                <p className="confession__text">{entry.text}</p>
-                <div className="confession__meta">
-                  <span className="confession__badge">
-                    {t("confessionalPending")}
-                  </span>
-                  <button
-                    type="button"
-                    className="icon-button icon-button--small"
-                    onClick={() => onRemove(entry.id)}
-                    aria-label={t("confessionalRemove")}
-                    title={t("confessionalRemove")}
-                  >
-                    <IconTrash />
-                  </button>
-                </div>
-              </article>
-            ))
+            ordered.map((entry) => {
+              const active = entry.status === "queued";
+              return (
+                <article
+                  className={`confession ${active ? "" : "confession--done"}`}
+                  key={entry.id}
+                >
+                  <p className="confession__text">{entry.text}</p>
+                  <div className="confession__meta">
+                    <span
+                      className={`confession__badge confession__badge--${entry.status}`}
+                    >
+                      {statusLabel(entry.status, t)}
+                    </span>
+                    {active ? (
+                      <span className="confession__count">
+                        {t("confessionalPraying", {
+                          done: entry.prayers_done,
+                          target: entry.prayers_target,
+                        })}
+                      </span>
+                    ) : null}
+                    {active ? (
+                      <button
+                        type="button"
+                        className="icon-button icon-button--small"
+                        onClick={() => onCancel(entry.id)}
+                        disabled={busy}
+                        aria-label={t("confessionalCancel")}
+                        title={t("confessionalCancel")}
+                      >
+                        <IconTrash />
+                      </button>
+                    ) : null}
+                  </div>
+                  {active ? (
+                    <div
+                      className="confession__bar"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={entry.prayers_target}
+                      aria-valuenow={entry.prayers_done}
+                    >
+                      <span style={{ width: `${progress(entry)}%` }} />
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })
           )}
         </div>
 
@@ -99,21 +177,23 @@ export function Sidebar({
             className="sidebar__input"
             value={draft}
             rows={3}
-            maxLength={400}
+            maxLength={MAX_LENGTH}
             placeholder={t("confessionalPlaceholder")}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                submit();
+                void submit();
               }
             }}
           />
+          {notice ? <p className="sidebar__notice">{t("confessionalDuplicate")}</p> : null}
+          {error ? <p className="sidebar__notice sidebar__notice--error">{error}</p> : null}
           <button
             type="button"
             className="button button--primary"
-            onClick={submit}
-            disabled={!draft.trim()}
+            onClick={() => void submit()}
+            disabled={busy || !draft.trim()}
           >
             {t("confessionalAdd")}
           </button>

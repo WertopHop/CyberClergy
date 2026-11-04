@@ -33,6 +33,8 @@
   --accent-strong: #f0d18f;
   --accent-contrast: #1a1408;
   --danger: #e07070;
+  --warning: #d8a657;
+  --ok: #86b98a;
 
   --sky-top: #04050a;
   --sky-bottom: #1a1b2d;
@@ -82,6 +84,8 @@
   --accent-strong: #b8862b;
   --accent-contrast: #fffaf0;
   --danger: #b0433f;
+  --warning: #a8741c;
+  --ok: #4f8a58;
 
   --sky-top: #c8d5e8;
   --sky-bottom: #f5e7d3;

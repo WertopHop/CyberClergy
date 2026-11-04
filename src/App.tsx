@@ -1,21 +1,18 @@
 // Root screen: the frame (title bar, confessional drawer, settings sheet) plus
-// the chapel scene. All state that the Rust shell owns is loaded once on mount.
-import { useCallback, useEffect, useMemo, useState } from "react";
+// the chapel scene. Everything stateful lives in Rust; this component wires the
+// hooks together and keeps the window chrome honest.
+import { useEffect, useMemo, useState } from "react";
 
 import { Chapel } from "./components/Chapel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
 import { useChapel } from "./hooks/useChapel";
+import { useConfessions } from "./hooks/useConfessions";
 import { usePreferences } from "./hooks/usePreferences";
 import { useTranslate } from "./i18n";
 import { listProviders, listReligions } from "./lib/bridge";
-import {
-  createConfession,
-  loadConfessions,
-  saveConfessions,
-} from "./lib/confessional";
-import type { Confession, ProviderView, ReligionProfile } from "./lib/types";
+import type { ProviderView, ReligionProfile } from "./lib/types";
 
 export default function App() {
   const { preferences, update } = usePreferences();
@@ -23,9 +20,6 @@ export default function App() {
 
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [religions, setReligions] = useState<ReligionProfile[]>([]);
-  const [confessions, setConfessions] = useState<Confession[]>(() =>
-    loadConfessions(),
-  );
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -66,32 +60,16 @@ export default function App() {
 
   const enabled = providers.some((provider) => provider.configured);
 
-  const chapel = useChapel({
-    clerics: preferences.clerics,
-    religion: religion?.id ?? "",
-    language: preferences.language,
-    enabled,
-  });
+  const chapel = useChapel({ enabled });
+  const confessions = useConfessions();
+  const reloadConfessions = confessions.reload;
 
-  const addConfession = useCallback((text: string) => {
-    const entry = createConfession(text);
-    if (!entry) {
-      return;
+  // Counters move while the drawer is open: refresh as soon as it appears.
+  useEffect(() => {
+    if (sidebarOpen) {
+      reloadConfessions();
     }
-    setConfessions((current) => {
-      const next = [entry, ...current];
-      saveConfessions(next);
-      return next;
-    });
-  }, []);
-
-  const removeConfession = useCallback((id: string) => {
-    setConfessions((current) => {
-      const next = current.filter((entry) => entry.id !== id);
-      saveConfessions(next);
-      return next;
-    });
-  }, []);
+  }, [sidebarOpen, reloadConfessions]);
 
   // Escape closes the topmost layer, as expected from a chat-like application.
   useEffect(() => {
@@ -109,11 +87,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [settingsOpen, sidebarOpen]);
 
-  const openSettings = useCallback(() => {
-    setSidebarOpen(false);
-    setSettingsOpen(true);
-  }, []);
-
   return (
     <div className="app">
       <TitleBar
@@ -127,10 +100,17 @@ export default function App() {
           t={t}
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
-          confessions={confessions}
-          onAdd={addConfession}
-          onRemove={removeConfession}
-          onOpenSettings={openSettings}
+          entries={confessions.entries}
+          busy={confessions.busy}
+          notice={confessions.notice}
+          error={confessions.error}
+          onAdd={confessions.add}
+          onCancel={(id) => void confessions.cancel(id)}
+          onForget={() => void confessions.forget()}
+          onOpenSettings={() => {
+            setSidebarOpen(false);
+            setSettingsOpen(true);
+          }}
         />
 
         <Chapel
@@ -140,10 +120,9 @@ export default function App() {
           clerics={preferences.clerics}
           bubbles={chapel.bubbles}
           activeIndex={chapel.activeIndex}
-          error={chapel.error}
+          status={chapel.status}
           enabled={enabled}
-          onOpenSettings={openSettings}
-          onRetry={chapel.reload}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
 
         <SettingsPanel
@@ -154,8 +133,8 @@ export default function App() {
           onChange={update}
           providers={providers}
           religions={religions}
+          status={chapel.status}
           onProviders={setProviders}
-          onResetPrayers={chapel.reload}
         />
       </div>
     </div>

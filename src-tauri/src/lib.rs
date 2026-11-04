@@ -1,33 +1,48 @@
 //! Tauri entry point for CyberClergy.
 //!
-//! The shell owns the shared application state: preferences and credentials
-//! persisted by [`prefs::PrefsStore`], the provider snapshot derived from them,
-//! the prayer generator and the catalog of religion profiles. Profiles are
-//! embedded into the binary, so packaged builds always carry their clergy
-//! without shipping extra resource files.
+//! The shell owns the shared application state:
 //!
-//! Network calls are kept out of the state lock: every command copies what it
-//! needs (an `Arc` to the generator and an owned prayer spec) before awaiting,
-//! which keeps the commands `Send` and the UI responsive.
+//! * credentials from [`secrets::SecretStore`] (OS keychain, with `settings.json`
+//!   as the fallback) and the provider snapshot derived from them;
+//! * the prayer generator and the embedded catalog of religion profiles;
+//! * the confessional queue persisted by [`confessions::ConfessionStore`];
+//! * the SQLite journal in [`history`];
+//! * the rhythm state ([`cyberclergy_llm::Health`]) and the per-cleric schedule.
+//!
+//! A single background task, [`scheduler`], turns that state into prayer and
+//! pushes events to the interface. Network calls are kept out of the state lock:
+//! commands copy what they need (an `Arc` to the generator, an owned spec) before
+//! awaiting.
 
+mod confessions;
+mod history;
 mod prefs;
+mod scheduler;
+mod secrets;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use cyberclergy_llm::{
-    ChatRequest, PrayerGenerator, ProfileCatalog, ProviderId, ProviderSpec, Registry,
-    ReligionProfile, Settings, PROVIDER_SPECS,
+    Cadence, ChatRequest, Health, Intercession, Policy, PrayerGenerator, ProfileCatalog, ProviderId,
+    ProviderSpec, Registry, ReligionProfile, Settings, PROVIDER_SPECS,
 };
 use serde::Serialize;
 use tauri::{Manager, State};
+use tokio::sync::Notify;
 
+use confessions::{ConfessionStore, CONFESSIONS_FILE};
+use history::{now_millis, now_secs, History, PrayerRecord, PrayerStats, HISTORY_FILE};
 use prefs::{Preferences, PrefsStore, SETTINGS_FILE};
+use secrets::SecretStore;
 
-/// Shared state managed by Tauri and handed to commands.
+/// Every command and the scheduler share this handle.
+type Shared = Arc<Mutex<AppState>>;
+
+/// State managed by Tauri and handed to commands.
 pub struct AppState {
-    prefs: PrefsStore,
+    secrets: SecretStore,
     /// Snapshot rebuilt whenever a credential changes.
     settings: Settings,
     /// `None` when no provider is configured or the HTTP client could not be
@@ -36,10 +51,27 @@ pub struct AppState {
     /// Empty only if the embedded profiles failed validation, which would be a
     /// build-time bug rather than a user error.
     profiles: ProfileCatalog,
+    confessions: ConfessionStore,
+    history: History,
+    /// Failures, cooldowns and the hourly budget.
+    health: Health,
+    /// Wakes the scheduler after a change instead of waiting for the next tick.
+    wake: Arc<Notify>,
+    /// Next turn of each cleric, Unix seconds.
+    schedule: Vec<i64>,
+    /// Rotation through the tradition's offline canon.
+    quiet_rotation: u64,
+    /// Last failure, cleared by the next successful prayer.
+    last_error: Option<String>,
 }
 
 impl AppState {
-    fn new(prefs: PrefsStore) -> Self {
+    fn new(
+        secrets: SecretStore,
+        confessions: ConfessionStore,
+        history: History,
+        policy: Policy,
+    ) -> Self {
         let profiles = match ProfileCatalog::embedded() {
             Ok(catalog) => catalog,
             Err(error) => {
@@ -49,21 +81,42 @@ impl AppState {
         };
 
         let mut state = Self {
-            prefs,
+            secrets,
             settings: Settings::from_vars(&BTreeMap::new()),
             generator: None,
             profiles,
+            confessions,
+            history,
+            health: Health::new(policy, now_secs()),
+            wake: Arc::new(Notify::new()),
+            schedule: Vec::new(),
+            quiet_rotation: 0,
+            last_error: None,
         };
         state.rebuild_providers();
+        state.ensure_schedule(now_secs());
         state
     }
 
-    /// Recomposes provider settings from `.env` plus the credentials stored by
-    /// the user. Stored values win, so the settings screen always has the last
-    /// word over whatever a developer left in `.env`.
+    fn preferences(&self) -> Preferences {
+        self.secrets.prefs().preferences()
+    }
+
+    /// The prayer language follows the interface language, so a Russian user
+    /// gets Russian prayers without touching the prompt.
+    fn prayer_language(&self) -> &'static str {
+        match self.preferences().language.as_str() {
+            "ru" => "Russian",
+            _ => "English",
+        }
+    }
+
+    /// Recomposes provider settings from `.env` plus the credentials held by the
+    /// secret store. Stored values win, so the settings screen always has the
+    /// last word over whatever a developer left in `.env`.
     fn rebuild_providers(&mut self) {
         let mut vars: BTreeMap<String, String> = std::env::vars().collect();
-        vars.extend(self.prefs.env_overrides());
+        vars.extend(self.secrets.keys());
         self.settings = Settings::from_vars(&vars);
         self.generator = Registry::new(&self.settings)
             .ok()
@@ -99,7 +152,8 @@ impl AppState {
             .collect()
     }
 
-    /// Keeps preferences pointing at a religion the catalog actually knows.
+    /// Keeps preferences pointing at a religion the catalog actually knows and
+    /// propagates a changed cleric count to the queue and the schedule.
     fn set_preferences(&mut self, preferences: Preferences) -> Result<Preferences, String> {
         let mut preferences = preferences.sanitized();
         if self.profiles.get(&preferences.religion).is_none() {
@@ -107,7 +161,47 @@ impl AppState {
                 preferences.religion = profile.id.clone();
             }
         }
-        self.prefs.set_preferences(preferences)
+
+        let previous = self.preferences();
+        let stored = self.secrets.prefs_mut().set_preferences(preferences)?;
+
+        if stored.clerics != previous.clerics {
+            self.confessions.queue_mut().set_clerics(stored.clerics);
+            if let Err(error) = self.confessions.persist() {
+                eprintln!("cannot persist the confessional queue: {error}");
+            }
+        }
+
+        // Only the rhythm-shaping settings reset the schedule; switching a theme
+        // or a language must not scatter the clerics' turns.
+        let rhythm_changed = stored.religion != previous.religion
+            || stored.clerics != previous.clerics
+            || stored.pace != previous.pace;
+        if rhythm_changed {
+            self.schedule.clear();
+            self.ensure_schedule(now_secs());
+        }
+        self.wake.notify_one();
+        Ok(stored)
+    }
+
+    /// Lazily rebuilds the per-cleric turn list whenever its shape is stale.
+    fn ensure_schedule(&mut self, now: i64) {
+        let preferences = self.preferences();
+        if self.schedule.len() == preferences.clerics {
+            return;
+        }
+        let Some(profile) = self.profiles.get(&preferences.religion) else {
+            return;
+        };
+        let cadence = Cadence::new(
+            preferences.pace(),
+            profile.schedule.interval_seconds,
+            profile.schedule.min_interval_seconds,
+        );
+        self.schedule = (0..preferences.clerics)
+            .map(|slot| cadence.first_due(slot, preferences.clerics, now))
+            .collect();
     }
 }
 
@@ -115,7 +209,7 @@ impl AppState {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderField {
     pub name: &'static str,
-    /// Whether the value is currently known (from `.env` or the stored file).
+    /// Whether the value is currently known (from `.env` or the secret store).
     pub set: bool,
 }
 
@@ -146,13 +240,12 @@ pub struct CheckOutcome {
     pub elapsed_ms: u64,
 }
 
-/// The prayer follows the interface language, so a Russian user gets Russian
-/// prayers without touching the prompt.
-fn prayer_language(preference: &str) -> &'static str {
-    match preference {
-        "ru" => "Russian",
-        _ => "English",
-    }
+/// Result of writing an entry in the confessional.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfessionOutcome {
+    pub entry: Intercession,
+    /// The same text is already waiting; nothing new was queued.
+    pub duplicate: bool,
 }
 
 fn state_error() -> String {
@@ -166,28 +259,26 @@ fn parse_provider(provider: &str) -> Result<ProviderId, String> {
 }
 
 #[tauri::command]
-fn list_providers(state: State<'_, Mutex<AppState>>) -> Result<Vec<ProviderView>, String> {
+fn list_providers(state: State<'_, Shared>) -> Result<Vec<ProviderView>, String> {
     let state = state.lock().map_err(|_| state_error())?;
     Ok(state.provider_views())
 }
 
 #[tauri::command]
-fn list_religions(
-    state: State<'_, Mutex<AppState>>,
-) -> Result<Vec<ReligionProfile>, String> {
+fn list_religions(state: State<'_, Shared>) -> Result<Vec<ReligionProfile>, String> {
     let state = state.lock().map_err(|_| state_error())?;
     Ok(state.profiles.list().into_iter().cloned().collect())
 }
 
 #[tauri::command]
-fn load_preferences(state: State<'_, Mutex<AppState>>) -> Result<Preferences, String> {
+fn load_preferences(state: State<'_, Shared>) -> Result<Preferences, String> {
     let state = state.lock().map_err(|_| state_error())?;
-    Ok(state.prefs.preferences())
+    Ok(state.preferences())
 }
 
 #[tauri::command]
 fn save_preferences(
-    state: State<'_, Mutex<AppState>>,
+    state: State<'_, Shared>,
     preferences: Preferences,
 ) -> Result<Preferences, String> {
     let mut state = state.lock().map_err(|_| state_error())?;
@@ -196,7 +287,7 @@ fn save_preferences(
 
 #[tauri::command]
 fn save_provider_field(
-    state: State<'_, Mutex<AppState>>,
+    state: State<'_, Shared>,
     provider: String,
     field: String,
     value: String,
@@ -208,20 +299,19 @@ fn save_provider_field(
     }
 
     let mut state = state.lock().map_err(|_| state_error())?;
-    state.prefs.set_key(&field, &value)?;
+    state.secrets.set_key(&field, &value)?;
     state.rebuild_providers();
+    state.wake.notify_one();
     Ok(state.provider_views())
 }
 
 #[tauri::command]
-fn clear_provider(
-    state: State<'_, Mutex<AppState>>,
-    provider: String,
-) -> Result<Vec<ProviderView>, String> {
+fn clear_provider(state: State<'_, Shared>, provider: String) -> Result<Vec<ProviderView>, String> {
     let id = parse_provider(&provider)?;
     let mut state = state.lock().map_err(|_| state_error())?;
-    state.prefs.clear_provider(id)?;
+    state.secrets.clear_provider(id)?;
     state.rebuild_providers();
+    state.wake.notify_one();
     Ok(state.provider_views())
 }
 
@@ -229,7 +319,7 @@ fn clear_provider(
 /// which is all the settings screen needs to confirm a key works.
 #[tauri::command]
 async fn check_provider(
-    state: State<'_, Mutex<AppState>>,
+    state: State<'_, Shared>,
     provider: String,
 ) -> Result<CheckOutcome, String> {
     let id = parse_provider(&provider)?;
@@ -260,17 +350,18 @@ async fn check_provider(
     })
 }
 
-/// Composes one prayer for the chapel. The scheduler will reuse this command.
+/// Composes one prayer on demand. The scheduler has its own path through the
+/// same generator; this command stays for manual checks and previews.
 #[tauri::command]
 async fn generate_prayer(
-    state: State<'_, Mutex<AppState>>,
+    state: State<'_, Shared>,
     religion: String,
     short: bool,
     intent: Option<String>,
 ) -> Result<PrayerOutcome, String> {
     // The lock is released before the network call: only owned data crosses the
     // await boundary.
-    let (generator, spec, language) = {
+    let (generator, spec) = {
         let state = state.lock().map_err(|_| state_error())?;
         let generator = state
             .generator
@@ -280,15 +371,15 @@ async fn generate_prayer(
             .profiles
             .get(&religion)
             .ok_or_else(|| format!("unknown religion `{religion}`"))?;
-        let mut spec = profile.prayer_spec_for_length(short);
+        let mut spec = profile
+            .prayer_spec_for_length(short)
+            .with_language(state.prayer_language().to_string());
         if let Some(intent) = intent.filter(|value| !value.trim().is_empty()) {
             spec = spec.with_intent(intent);
         }
-        let language = prayer_language(&state.prefs.preferences().language);
-        (generator, spec, language)
+        (generator, spec)
     };
 
-    let spec = spec.with_language(language);
     let started = Instant::now();
     let response = generator
         .generate(&spec)
@@ -304,19 +395,111 @@ async fn generate_prayer(
     })
 }
 
+#[tauri::command]
+fn list_confessions(state: State<'_, Shared>) -> Result<Vec<Intercession>, String> {
+    let state = state.lock().map_err(|_| state_error())?;
+    Ok(state.confessions.queue().entries().to_vec())
+}
+
+#[tauri::command]
+fn submit_confession(
+    state: State<'_, Shared>,
+    text: String,
+) -> Result<ConfessionOutcome, String> {
+    let mut state = state.lock().map_err(|_| state_error())?;
+    let outcome = state
+        .confessions
+        .queue_mut()
+        .submit(&text, now_millis())
+        .map_err(|error| error.to_string())?;
+    state.confessions.persist()?;
+    state.wake.notify_one();
+    Ok(ConfessionOutcome {
+        entry: outcome.entry,
+        duplicate: outcome.duplicate,
+    })
+}
+
+#[tauri::command]
+fn cancel_confession(state: State<'_, Shared>, id: String) -> Result<Vec<Intercession>, String> {
+    let mut state = state.lock().map_err(|_| state_error())?;
+    if !state.confessions.queue_mut().cancel(&id) {
+        return Err("this entry is no longer waiting".to_string());
+    }
+    state.confessions.persist()?;
+    state.wake.notify_one();
+    Ok(state.confessions.queue().entries().to_vec())
+}
+
+/// Deletes finished entries, text included. An explicit "forget" action, so a
+/// prayed-over confession does not linger on disk.
+#[tauri::command]
+fn forget_finished_confessions(state: State<'_, Shared>) -> Result<Vec<Intercession>, String> {
+    let mut state = state.lock().map_err(|_| state_error())?;
+    state.confessions.queue_mut().forget_finished();
+    state.confessions.persist()?;
+    Ok(state.confessions.queue().entries().to_vec())
+}
+
+#[tauri::command]
+fn scheduler_status(
+    state: State<'_, Shared>,
+) -> Result<scheduler::ChapelStatus, String> {
+    let state = state.lock().map_err(|_| state_error())?;
+    Ok(scheduler::status_of(&state, now_secs()))
+}
+
+#[tauri::command]
+fn prayer_stats(state: State<'_, Shared>) -> Result<PrayerStats, String> {
+    let state = state.lock().map_err(|_| state_error())?;
+    // A rolling day rather than a calendar day: no timezone library, and "the
+    // last 24 hours" is what a continuously running chapel actually means.
+    state.history.stats(now_millis() - 86_400_000)
+}
+
+#[tauri::command]
+fn prayer_journal(
+    state: State<'_, Shared>,
+    limit: Option<u32>,
+) -> Result<Vec<PrayerRecord>, String> {
+    let state = state.lock().map_err(|_| state_error())?;
+    state.history.recent(limit.unwrap_or(20))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // `.env` remains the developer workflow; the settings screen stores keys in
-    // the application data directory instead.
+    // the OS keychain, falling back to the application config directory.
     let _ = dotenvy::dotenv();
 
     tauri::Builder::default()
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
-            let store = PrefsStore::open(config_dir.join(SETTINGS_FILE));
+            let data_dir = app.path().app_data_dir()?;
+
+            let secrets = SecretStore::open(PrefsStore::open(config_dir.join(SETTINGS_FILE)));
+            let clerics = secrets.prefs().preferences().clerics;
+            let confessions = ConfessionStore::open(config_dir.join(CONFESSIONS_FILE), clerics);
             #[cfg(debug_assertions)]
-            eprintln!("cyberclergy: settings live in {}", store.path().display());
-            app.manage(Mutex::new(AppState::new(store)));
+            eprintln!(
+                "cyberclergy: preferences in {}, credentials in the `{}` store, confessional in {}",
+                secrets.prefs().path().display(),
+                secrets.backend().as_str(),
+                confessions.path().display()
+            );
+            let history = History::open(&data_dir.join(HISTORY_FILE)).unwrap_or_else(|error| {
+                eprintln!("cannot open the prayer journal: {error}; keeping it in memory");
+                History::in_memory().expect("the in-memory journal always opens")
+            });
+
+            let state: Shared = Arc::new(Mutex::new(AppState::new(
+                secrets,
+                confessions,
+                history,
+                scheduler::policy_from_env(),
+            )));
+            app.manage(state.clone());
+            scheduler::spawn(app.handle().clone(), state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -327,7 +510,14 @@ pub fn run() {
             save_provider_field,
             clear_provider,
             check_provider,
-            generate_prayer
+            generate_prayer,
+            list_confessions,
+            submit_confession,
+            cancel_confession,
+            forget_finished_confessions,
+            scheduler_status,
+            prayer_stats,
+            prayer_journal
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the CyberClergy window");

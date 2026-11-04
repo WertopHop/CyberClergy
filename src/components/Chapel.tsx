@@ -2,8 +2,9 @@
 // above whoever is currently speaking. The cloud is a symmetric stack of blurred
 // SVG blobs, which keeps the composition even at any aspect ratio.
 import type { Translate } from "../i18n";
+import type { Dictionary } from "../i18n/locales/en";
 import type { Bubble } from "../hooks/useChapel";
-import type { ReligionProfile } from "../lib/types";
+import type { ChapelStatus, ReligionProfile, Tempo, ThemeId } from "../lib/types";
 import { PrayerBubble } from "./PrayerBubble";
 import { Robot } from "./Robot";
 
@@ -14,10 +15,9 @@ interface ChapelProps {
   clerics: number;
   bubbles: Record<number, Bubble>;
   activeIndex: number | null;
-  error: string | null;
+  status: ChapelStatus | null;
   enabled: boolean;
   onOpenSettings: () => void;
-  onRetry: () => void;
 }
 
 interface Puff {
@@ -120,6 +120,87 @@ function layoutRows(clerics: number): number[] {
   return rows;
 }
 
+const THEME_KEYS: Record<ThemeId, keyof Dictionary> = {
+  guilt: "themeGuilt",
+  grief: "themeGrief",
+  illness: "themeIllness",
+  gratitude: "themeGratitude",
+  family: "themeFamily",
+  habit: "themeHabit",
+  work: "themeWork",
+  anger: "themeAnger",
+  fear: "themeFear",
+  loneliness: "themeLoneliness",
+  doubt: "themeDoubt",
+  unnamed: "themeUnnamed",
+};
+
+const TEMPO_KEYS: Record<Tempo, keyof Dictionary> = {
+  steady: "tempoSteady",
+  cautious: "tempoCautious",
+  resting: "tempoResting",
+  offline: "tempoOffline",
+};
+
+/** The counter, the theme and the source, when there is anything to say. */
+function bubbleMeta(bubble: Bubble, t: Translate): string | null {
+  const parts: string[] = [];
+  if (bubble.ordinal !== null && bubble.target !== null) {
+    parts.push(t("confessionalPraying", { done: bubble.ordinal, target: bubble.target }));
+  }
+  if (bubble.theme) {
+    parts.push(t(THEME_KEYS[bubble.theme]));
+  }
+  if (bubble.source === "quiet") {
+    parts.push(t("chapelQuiet"));
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function StatusBar({ t, status }: { t: Translate; status: ChapelStatus | null }) {
+  if (!status || !status.configured) {
+    return null;
+  }
+  return (
+    <div className="chapel__status" role="status">
+      <span className={`status-chip status-chip--${status.tempo}`}>
+        <span className="status-chip__dot" aria-hidden="true" />
+        {t(TEMPO_KEYS[status.tempo])}
+      </span>
+      {status.pending > 0 ? (
+        <span className="status-chip status-chip--muted">
+          {t("chapelPending", { count: status.pending })}
+        </span>
+      ) : null}
+      <span className="status-chip status-chip--muted">
+        {t("chapelBudget", {
+          done: status.budget.done,
+          limit: status.budget.limit,
+        })}
+      </span>
+    </div>
+  );
+}
+
+/** Quiet hours: the chapel keeps praying its canon while the networks rest. */
+function QuietNotice({ t, status }: { t: Translate; status: ChapelStatus | null }) {
+  if (!status || !status.configured) {
+    return null;
+  }
+  if (status.tempo !== "resting" && status.tempo !== "offline") {
+    return null;
+  }
+  return (
+    <div className="chapel__notice" role="status">
+      <span className="chapel__notice-title">{t("chapelQuietTitle")}</span>
+      <p className="chapel__notice-text">
+        {status.error ??
+          (status.tempo === "resting" ? t("tempoRestingHint") : t("tempoOfflineHint"))}
+      </p>
+    </div>
+  );
+}
+
 export function Chapel({
   t,
   language,
@@ -127,10 +208,9 @@ export function Chapel({
   clerics,
   bubbles,
   activeIndex,
-  error,
+  status,
   enabled,
   onOpenSettings,
-  onRetry,
 }: ChapelProps) {
   const rows = layoutRows(clerics);
   const traditionName = religion
@@ -150,6 +230,8 @@ export function Chapel({
         <p className="chapel__meta">{t("chapelMeta", { count: clerics })}</p>
       </header>
 
+      <StatusBar t={t} status={status} />
+
       <div className="chapel__stacks">
         {rows.map((size, rowIndex) => (
           <div className="chapel__row" key={`row-${rowIndex}`}>
@@ -167,7 +249,12 @@ export function Chapel({
                 >
                   <div className="chapel__bubble-slot">
                     {bubble ? (
-                      <PrayerBubble key={bubble.createdAt} text={bubble.text} />
+                      <PrayerBubble
+                        key={bubble.at}
+                        text={bubble.text}
+                        meta={bubbleMeta(bubble, t)}
+                        quiet={bubble.source === "quiet"}
+                      />
                     ) : null}
                   </div>
                   <Robot
@@ -182,6 +269,8 @@ export function Chapel({
         ))}
       </div>
 
+      <QuietNotice t={t} status={status} />
+
       {!enabled ? (
         <div className="empty-card">
           <h2 className="empty-card__title">{t("chapelEmptyTitle")}</h2>
@@ -192,18 +281,6 @@ export function Chapel({
             onClick={onOpenSettings}
           >
             {t("chapelEmptyAction")}
-          </button>
-        </div>
-      ) : null}
-
-      {error ? (
-        <div className="chapel__error" role="status">
-          <div className="chapel__error-copy">
-            <span className="chapel__error-title">{t("chapelError")}</span>
-            <p className="chapel__error-text">{error}</p>
-          </div>
-          <button type="button" className="button" onClick={onRetry}>
-            {t("chapelRetry")}
           </button>
         </div>
       ) : null}

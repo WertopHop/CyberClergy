@@ -25,8 +25,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use cyberclergy_llm::{
-    Cadence, ChatRequest, Health, Intercession, Policy, PrayerGenerator, ProfileCatalog, ProviderId,
-    ProviderSpec, Registry, ReligionProfile, Settings, PROVIDER_SPECS,
+    Cadence, ChatRequest, Health, Intercession, IntercessionRequest, Policy, PrayerGenerator,
+    ProfileCatalog, ProviderId, ProviderSpec, Registry, ReligionProfile, Settings, PROVIDER_SPECS,
 };
 use serde::Serialize;
 use tauri::{Manager, State};
@@ -59,6 +59,8 @@ pub struct AppState {
     wake: Arc<Notify>,
     /// Next turn of each cleric, Unix seconds.
     schedule: Vec<i64>,
+    /// Roster the current schedule was built for, slot by slot.
+    schedule_roster: Vec<ProviderId>,
     /// Rotation through the tradition's offline canon.
     quiet_rotation: u64,
     /// Last failure, cleared by the next successful prayer.
@@ -90,6 +92,7 @@ impl AppState {
             health: Health::new(policy, now_secs()),
             wake: Arc::new(Notify::new()),
             schedule: Vec::new(),
+            schedule_roster: Vec::new(),
             quiet_rotation: 0,
             last_error: None,
         };
@@ -123,6 +126,27 @@ impl AppState {
             .map(|registry| Arc::new(PrayerGenerator::new(registry)));
     }
 
+    /// Providers that currently hold every credential they need, in the spec
+    /// order. This is what the roster can be drawn from.
+    fn configured_ids(&self) -> Vec<ProviderId> {
+        PROVIDER_SPECS
+            .iter()
+            .map(|spec| spec.id)
+            .filter(|id| {
+                self.settings
+                    .provider(*id)
+                    .map(|config| config.is_configured())
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+
+    /// Networks standing on the cloud, slot by slot. Slot `i` prays through
+    /// `roster[i]`, so the composition and the schedule always agree.
+    fn roster(&self) -> Vec<ProviderId> {
+        self.preferences().cloud(&self.configured_ids())
+    }
+
     fn provider_views(&self) -> Vec<ProviderView> {
         PROVIDER_SPECS
             .iter()
@@ -153,7 +177,7 @@ impl AppState {
     }
 
     /// Keeps preferences pointing at a religion the catalog actually knows and
-    /// propagates a changed cleric count to the queue and the schedule.
+    /// propagates a changed roster to the queue and the schedule.
     fn set_preferences(&mut self, preferences: Preferences) -> Result<Preferences, String> {
         let mut preferences = preferences.sanitized();
         if self.profiles.get(&preferences.religion).is_none() {
@@ -165,18 +189,11 @@ impl AppState {
         let previous = self.preferences();
         let stored = self.secrets.prefs_mut().set_preferences(preferences)?;
 
-        if stored.clerics != previous.clerics {
-            self.confessions.queue_mut().set_clerics(stored.clerics);
-            if let Err(error) = self.confessions.persist() {
-                eprintln!("cannot persist the confessional queue: {error}");
-            }
-        }
-
         // Only the rhythm-shaping settings reset the schedule; switching a theme
         // or a language must not scatter the clerics' turns.
         let rhythm_changed = stored.religion != previous.religion
-            || stored.clerics != previous.clerics
-            || stored.pace != previous.pace;
+            || stored.pace != previous.pace
+            || self.roster() != self.schedule_roster;
         if rhythm_changed {
             self.schedule.clear();
             self.ensure_schedule(now_secs());
@@ -185,13 +202,25 @@ impl AppState {
         Ok(stored)
     }
 
-    /// Lazily rebuilds the per-cleric turn list whenever its shape is stale.
+    /// Lazily rebuilds the per-cleric turn list whenever its shape is stale and
+    /// hands the same roster to the confessional queue, so slot `i` of both
+    /// sides is the same robot.
     fn ensure_schedule(&mut self, now: i64) {
-        let preferences = self.preferences();
-        if self.schedule.len() == preferences.clerics {
+        let roster = self.roster();
+        let roster_changed = roster != self.schedule_roster;
+        if roster_changed {
+            self.schedule_roster = roster.clone();
+            self.confessions.queue_mut().set_roster(&roster);
+            if let Err(error) = self.confessions.persist() {
+                eprintln!("cannot persist the confessional queue: {error}");
+            }
+        }
+        if !roster_changed && !self.schedule.is_empty() {
             return;
         }
+        let preferences = self.preferences();
         let Some(profile) = self.profiles.get(&preferences.religion) else {
+            self.schedule.clear();
             return;
         };
         let cadence = Cadence::new(
@@ -199,8 +228,9 @@ impl AppState {
             profile.schedule.interval_seconds,
             profile.schedule.min_interval_seconds,
         );
-        self.schedule = (0..preferences.clerics)
-            .map(|slot| cadence.first_due(slot, preferences.clerics, now))
+        let count = roster.len();
+        self.schedule = (0..count)
+            .map(|slot| cadence.first_due(slot, count, now))
             .collect();
     }
 }
@@ -405,12 +435,21 @@ fn list_confessions(state: State<'_, Shared>) -> Result<Vec<Intercession>, Strin
 fn submit_confession(
     state: State<'_, Shared>,
     text: String,
+    repeat: Option<u32>,
+    endless: Option<bool>,
+    provider: Option<String>,
 ) -> Result<ConfessionOutcome, String> {
+    let provider = provider.as_deref().map(parse_provider).transpose()?;
+    let request = IntercessionRequest {
+        repeat,
+        endless: endless.unwrap_or(false),
+        provider,
+    };
     let mut state = state.lock().map_err(|_| state_error())?;
     let outcome = state
         .confessions
         .queue_mut()
-        .submit(&text, now_millis())
+        .submit_with(&text, now_millis(), request)
         .map_err(|error| error.to_string())?;
     state.confessions.persist()?;
     state.wake.notify_one();
@@ -478,8 +517,11 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
 
             let secrets = SecretStore::open(PrefsStore::open(config_dir.join(SETTINGS_FILE)));
-            let clerics = secrets.prefs().preferences().clerics;
-            let confessions = ConfessionStore::open(config_dir.join(CONFESSIONS_FILE), clerics);
+            // Slots settle once the roster is known; the widest count keeps the
+            // stored entries spread out until then, and `ensure_schedule` modulo
+            // folds them onto the real roster.
+            let confessions =
+                ConfessionStore::open(config_dir.join(CONFESSIONS_FILE), prefs::MAX_ROBOTS);
             #[cfg(debug_assertions)]
             eprintln!(
                 "cyberclergy: preferences in {}, credentials in the `{}` store, confessional in {}",

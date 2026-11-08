@@ -65,6 +65,38 @@ impl PrayerGenerator {
         self.registry.chat_with_fallback(&request).await
     }
 
+    /// Composes one prayer through the cleric's own network, falling back to
+    /// the rest of the rotation so an exhausted free tier never silences a
+    /// robot. When nothing else answers, the slot's own failure is reported.
+    pub async fn generate_for(
+        &self,
+        provider: Option<ProviderId>,
+        spec: &PrayerSpec,
+    ) -> Result<ChatResponse, LlmError> {
+        let Some(provider) = provider else {
+            return self.generate(spec).await;
+        };
+        let request = self.prepare(spec)?;
+        match self.registry.chat(provider, &request).await {
+            Ok(response) => Ok(response),
+            Err(primary) => {
+                tracing::warn!(
+                    provider = %provider,
+                    error = %primary,
+                    "the cleric's own network failed, falling back to the rotation"
+                );
+                match self
+                    .registry
+                    .chat_with_fallback_except(provider, &request)
+                    .await
+                {
+                    Ok(response) => Ok(response),
+                    Err(_) => Err(primary),
+                }
+            }
+        }
+    }
+
     /// Composes one prayer through a specific provider.
     pub async fn generate_with_provider(
         &self,

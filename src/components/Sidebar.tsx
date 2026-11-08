@@ -4,23 +4,37 @@
 import { useState } from "react";
 
 import type { Translate } from "../i18n";
-import type { ConfessionEntry, IntercessionStatus } from "../lib/types";
+import type { ConfessionRequest } from "../lib/bridge";
+import { MAX_REPEAT, providerLabel } from "../lib/providers";
+import type { ConfessionEntry, IntercessionStatus, ProviderId } from "../lib/types";
 import { IconClose, IconFlame, IconGear, IconTrash } from "./Icons";
 
 const MAX_LENGTH = 1000;
+/** Repeat count offered before the person touches the field. */
+const DEFAULT_REPEAT = 5;
 
 interface SidebarProps {
   t: Translate;
   open: boolean;
   onClose: () => void;
+  /** Robots on the cloud: only they can be asked for by name. */
+  robots: ProviderId[];
   entries: ConfessionEntry[];
   busy: boolean;
   notice: "duplicate" | null;
   error: string | null;
-  onAdd: (text: string) => Promise<boolean>;
+  onAdd: (text: string, request: ConfessionRequest) => Promise<boolean>;
   onCancel: (id: string) => void;
   onForget: () => void;
   onOpenSettings: () => void;
+}
+
+function clampRepeat(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1;
+  }
+  return Math.min(parsed, MAX_REPEAT);
 }
 
 function statusLabel(status: IntercessionStatus, t: Translate): string {
@@ -45,6 +59,7 @@ export function Sidebar({
   t,
   open,
   onClose,
+  robots,
   entries,
   busy,
   notice,
@@ -55,12 +70,22 @@ export function Sidebar({
   onOpenSettings,
 }: SidebarProps) {
   const [draft, setDraft] = useState("");
+  const [repeat, setRepeat] = useState(DEFAULT_REPEAT);
+  const [endless, setEndless] = useState(false);
+  const [platform, setPlatform] = useState<ProviderId | "">("");
+
+  // A robot that left the cloud cannot be asked for by name any more.
+  const pinned = robots.includes(platform as ProviderId) ? platform : "";
 
   const submit = async () => {
     if (!draft.trim() || busy) {
       return;
     }
-    const accepted = await onAdd(draft);
+    const accepted = await onAdd(draft, {
+      repeat: endless ? null : repeat,
+      endless,
+      provider: pinned === "" ? null : pinned,
+    });
     if (accepted) {
       setDraft("");
     }
@@ -136,10 +161,27 @@ export function Sidebar({
                     </span>
                     {active ? (
                       <span className="confession__count">
-                        {t("confessionalPraying", {
-                          done: entry.prayers_done,
-                          target: entry.prayers_target,
-                        })}
+                        {entry.endless
+                          ? t("confessionalEndlessCount", {
+                              done: entry.prayers_done,
+                            })
+                          : t("confessionalPraying", {
+                              done: entry.prayers_done,
+                              target: entry.prayers_target,
+                            })}
+                      </span>
+                    ) : null}
+                    {active && entry.provider ? (
+                      <span
+                        className={`confession__robot ${
+                          robots.includes(entry.provider) ? "" : "is-waiting"
+                        }`}
+                      >
+                        {robots.includes(entry.provider)
+                          ? providerLabel(entry.provider, t)
+                          : t("confessionalWaiting", {
+                              provider: providerLabel(entry.provider, t),
+                            })}
                       </span>
                     ) : null}
                     {active ? (
@@ -155,7 +197,7 @@ export function Sidebar({
                       </button>
                     ) : null}
                   </div>
-                  {active ? (
+                  {active && !entry.endless ? (
                     <div
                       className="confession__bar"
                       role="progressbar"
@@ -187,6 +229,47 @@ export function Sidebar({
               }
             }}
           />
+          <div className="composer-options">
+            <label className="composer-option">
+              <span className="composer-option__label">{t("confessionalRepeat")}</span>
+              <input
+                className="composer-option__number"
+                type="number"
+                min={1}
+                max={MAX_REPEAT}
+                value={repeat}
+                disabled={endless}
+                onChange={(event) => setRepeat(clampRepeat(event.target.value))}
+              />
+            </label>
+            <button
+              type="button"
+              className={`chip-toggle ${endless ? "is-on" : ""}`}
+              aria-pressed={endless}
+              onClick={() => setEndless((value) => !value)}
+            >
+              {t("confessionalEndless")}
+            </button>
+            <label className="composer-option composer-option--grow">
+              <span className="composer-option__label">
+                {t("confessionalPlatform")}
+              </span>
+              <select
+                className="composer-option__select"
+                value={pinned}
+                onChange={(event) =>
+                  setPlatform(event.target.value as ProviderId | "")
+                }
+              >
+                <option value="">{t("confessionalAnyRobot")}</option>
+                {robots.map((id) => (
+                  <option key={id} value={id}>
+                    {providerLabel(id, t)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           {notice ? <p className="sidebar__notice">{t("confessionalDuplicate")}</p> : null}
           {error ? <p className="sidebar__notice sidebar__notice--error">{error}</p> : null}
           <button

@@ -77,6 +77,8 @@ pub struct ChapelStatus {
     pub error: Option<String>,
     /// Seconds until any cleric's next ordinary turn.
     pub next_in_secs: Option<u64>,
+    /// Network an entry is pinned to but which no robot on the cloud runs.
+    pub waiting_for: Option<cyberclergy_llm::ProviderId>,
 }
 
 /// Reads the hourly call budget from the environment, falling back to the
@@ -153,6 +155,8 @@ enum Kind {
     Live {
         generator: Arc<PrayerGenerator>,
         spec: PrayerSpec,
+        /// Network of the slot; `None` falls back to the ordinary rotation.
+        provider: Option<cyberclergy_llm::ProviderId>,
     },
     Quiet {
         text: String,
@@ -173,7 +177,11 @@ enum Outcome {
 async fn run_job(job: Job) -> Finished {
     let started = Instant::now();
     let outcome = match &job.kind {
-        Kind::Live { generator, spec } => Outcome::Live(generator.generate(spec).await),
+        Kind::Live {
+            generator,
+            spec,
+            provider,
+        } => Outcome::Live(generator.generate_for(*provider, spec).await),
         Kind::Quiet { .. } => Outcome::Quiet,
     };
     Finished {
@@ -196,6 +204,13 @@ fn plan(shared: &Arc<Mutex<AppState>>, busy: &BTreeSet<usize>) -> Option<Job> {
     let profile = state.profiles.get(&preferences.religion)?.clone();
     state.ensure_schedule(now);
 
+    let roster = state.roster();
+    // An emptied cloud really is empty: entries keep their counters and wait
+    // until the person adds a robot back.
+    if roster.is_empty() {
+        return None;
+    }
+
     let busy_slots: Vec<usize> = busy.iter().copied().collect();
     let intercession = state.confessions.queue().next_task(&busy_slots);
     let (cleric, task) = match intercession {
@@ -214,6 +229,7 @@ fn plan(shared: &Arc<Mutex<AppState>>, busy: &BTreeSet<usize>) -> Option<Job> {
 
     let can_call = state.health.can_call(now);
     let language = state.prayer_language();
+    let provider = roster.get(cleric).copied();
     let kind = match (can_call, state.generator.clone()) {
         (true, Some(generator)) => {
             state.health.note_attempt(now);
@@ -223,7 +239,11 @@ fn plan(shared: &Arc<Mutex<AppState>>, busy: &BTreeSet<usize>) -> Option<Job> {
             if let Some(task) = &task {
                 spec = spec.with_intent(task.direction.clone());
             }
-            Kind::Live { generator, spec }
+            Kind::Live {
+                generator,
+                spec,
+                provider,
+            }
         }
         _ => {
             // Quiet hours: the tradition's own canon, rotated so it does not
@@ -273,6 +293,15 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
     let record: Option<PrayerRecord>;
     let task = finished.job.task.clone();
     let mut counted = false;
+    // An endless entry has no target to report: `None` keeps the bubble from
+    // printing "3 of 0".
+    let target = task.as_ref().and_then(|task| {
+        if task.endless {
+            None
+        } else {
+            Some(task.target)
+        }
+    });
 
     match finished.outcome {
         Outcome::Quiet => {
@@ -290,7 +319,7 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
                 intercession_id: task.as_ref().map(|task| task.id.clone()),
                 theme: task.as_ref().map(|task| task.theme.as_str().to_string()),
                 ordinal: task.as_ref().map(|task| task.ordinal),
-                target: task.as_ref().map(|task| task.target),
+                target,
                 text: Some(text.clone()),
                 prompt_tokens: 0,
                 completion_tokens: 0,
@@ -308,7 +337,7 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
                 theme: task.as_ref().map(|task| task.theme.as_str().to_string()),
                 severity: task.as_ref().map(|task| task.severity.as_str().to_string()),
                 ordinal: task.as_ref().map(|task| task.ordinal),
-                target: task.as_ref().map(|task| task.target),
+                target,
                 intercession_id: task.as_ref().map(|task| task.id.clone()),
                 elapsed_ms: finished.elapsed_ms,
                 prompt_tokens: 0,
@@ -335,7 +364,7 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
                 intercession_id: task.as_ref().map(|task| task.id.clone()),
                 theme: task.as_ref().map(|task| task.theme.as_str().to_string()),
                 ordinal: task.as_ref().map(|task| task.ordinal),
-                target: task.as_ref().map(|task| task.target),
+                target,
                 text: Some(response.text.clone()),
                 prompt_tokens,
                 completion_tokens,
@@ -352,7 +381,7 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
                 theme: task.as_ref().map(|task| task.theme.as_str().to_string()),
                 severity: task.as_ref().map(|task| task.severity.as_str().to_string()),
                 ordinal: task.as_ref().map(|task| task.ordinal),
-                target: task.as_ref().map(|task| task.target),
+                target,
                 intercession_id: task.as_ref().map(|task| task.id.clone()),
                 elapsed_ms,
                 prompt_tokens,
@@ -449,6 +478,12 @@ pub fn status_of(state: &AppState, now: i64) -> ChapelStatus {
         .filter(|due| **due > now)
         .min()
         .map(|due| (*due - now) as u64);
+    // An entry pinned to a network the cloud no longer runs waits for that
+    // robot to come back, and the interface says so instead of looking stuck.
+    let waiting_for = queue
+        .active()
+        .filter_map(|entry| entry.provider)
+        .find(|provider| !queue.roster().contains(provider));
 
     ChapelStatus {
         tempo: state.health.tempo(now).as_str(),
@@ -461,6 +496,7 @@ pub fn status_of(state: &AppState, now: i64) -> ChapelStatus {
         storage: state.secrets.backend().as_str(),
         error: state.last_error.clone(),
         next_in_secs,
+        waiting_for,
     }
 }
 

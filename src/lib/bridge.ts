@@ -17,6 +17,7 @@ import {
   previewSubmit,
 } from "./confessional";
 import { DEMO_RELIGIONS, PREVIEW_KEYS, type PreviewKey } from "./demo";
+import { cloudRoster, isProviderId } from "./providers";
 import type {
   ChapelStatus,
   CheckOutcome,
@@ -44,7 +45,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   language: "ru",
   theme: "night",
   religion: "christianity",
-  clerics: 7,
+  // No roster yet: the chapel stands every configured network up.
+  roster: null,
   pace: "normal",
 };
 
@@ -106,7 +108,22 @@ function wait(milliseconds: number): Promise<void> {
 function normalizePreferences(value: Partial<Preferences>): Preferences {
   const pace =
     value.pace === "calm" || value.pace === "lively" ? value.pace : "normal";
-  return { ...DEFAULT_PREFERENCES, ...value, pace };
+  const roster = Array.isArray(value.roster)
+    ? value.roster.filter(
+        (id): id is ProviderId =>
+          typeof id === "string" && isProviderId(id),
+      )
+    : null;
+  return { ...DEFAULT_PREFERENCES, ...value, pace, roster };
+}
+
+/** Robots the preview can show, mirroring the backend's roster resolution. */
+async function previewRoster(): Promise<ProviderId[]> {
+  const preferences = await loadPreferences();
+  return cloudRoster(
+    preferences.roster,
+    demoProviders.filter((provider) => provider.configured).map((provider) => provider.id),
+  );
 }
 
 function previewPrayer(religion: string, language: string): string {
@@ -294,14 +311,28 @@ export async function listConfessions(): Promise<ConfessionEntry[]> {
   return previewList();
 }
 
+/** What the person asked for when writing the entry down. */
+export interface ConfessionRequest {
+  /** Prayers to recite; ignored when `endless` is set. */
+  repeat: number | null;
+  endless: boolean;
+  provider: ProviderId | null;
+}
+
 export async function submitConfession(
   text: string,
+  request: ConfessionRequest,
 ): Promise<ConfessionOutcome> {
   if (isDesktop) {
-    return invoke<ConfessionOutcome>("submit_confession", { text });
+    return invoke<ConfessionOutcome>("submit_confession", {
+      text,
+      repeat: request.repeat,
+      endless: request.endless,
+      provider: request.provider,
+    });
   }
-  const preferences = await loadPreferences();
-  const outcome = previewSubmit(text, preferences.clerics);
+  const robots = await previewRoster();
+  const outcome = previewSubmit(text, request, robots.length, robots);
   emitDemoStatus();
   return outcome;
 }
@@ -358,6 +389,7 @@ function demoStatus(): ChapelStatus {
     storage: "file",
     error: null,
     next_in_secs: null,
+    waiting_for: null,
   };
 }
 
@@ -368,9 +400,10 @@ function emitDemoStatus(): void {
 
 async function demoStep(): Promise<void> {
   const preferences = await loadPreferences();
+  const robots = await previewRoster();
   const now = Date.now();
   const intercession = previewAdvance(now);
-  const clerics = Math.max(preferences.clerics, 1);
+  const clerics = Math.max(robots.length, 1);
   const cleric = intercession ? intercession.cleric : demoRuntime.cursor % clerics;
   if (!intercession) {
     demoRuntime.cursor += 1;
@@ -381,12 +414,13 @@ async function demoStep(): Promise<void> {
     cleric,
     text: previewPrayer(preferences.religion, preferences.language),
     source: intercession ? "intercession" : "schedule",
-    provider: "openrouter",
+    provider: robots[cleric % robots.length] ?? "openrouter",
     model: "preview",
     theme: intercession?.theme ?? null,
     severity: intercession?.severity ?? null,
     ordinal: intercession?.prayers_done ?? null,
-    target: intercession?.prayers_target ?? null,
+    target:
+      intercession && !intercession.endless ? intercession.prayers_target : null,
     intercession_id: intercession?.id ?? null,
     elapsed_ms: 900,
     prompt_tokens: 0,

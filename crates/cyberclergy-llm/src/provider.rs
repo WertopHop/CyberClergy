@@ -146,6 +146,35 @@ impl Registry {
         self.chat_with_order(request, &order).await
     }
 
+    /// Like [`Registry::chat_with_fallback`], but skips one network. The
+    /// scheduler uses it after a cleric's own network has failed: retrying the
+    /// same free tier in the same breath would only burn the quota twice.
+    pub async fn chat_with_fallback_except(
+        &self,
+        skip: ProviderId,
+        request: &ChatRequest,
+    ) -> Result<ChatResponse, LlmError> {
+        let order: Vec<ProviderId> = self
+            .shared
+            .provider_order
+            .iter()
+            .copied()
+            .filter(|id| *id != skip && self.providers.contains_key(id))
+            .collect();
+        let order = if order.is_empty() {
+            self.available()
+                .into_iter()
+                .filter(|id| *id != skip)
+                .collect()
+        } else {
+            order
+        };
+        if order.is_empty() {
+            return Err(LlmError::NoProvidersConfigured);
+        }
+        self.chat_with_order(request, &order).await
+    }
+
     /// Tries providers in an explicit order and aggregates the failures.
     pub async fn chat_with_order(
         &self,

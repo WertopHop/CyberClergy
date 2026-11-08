@@ -15,8 +15,8 @@ mod profile;
 pub mod scheduler;
 
 pub use intercession::{
-    Direction, Intercession, IntercessionQueue, IntercessionStatus, IntercessionTask, QueueError,
-    RecordOutcome, Severity, SubmitOutcome, Theme,
+    Direction, Intercession, IntercessionQueue, IntercessionRequest, IntercessionStatus,
+    IntercessionTask, QueueError, RecordOutcome, Severity, SubmitOutcome, Theme,
 };
 pub use profile::{
     Identity, OfflineCanon, ProfileCatalog, ProfileError, ReligionProfile, Schedule, Style,

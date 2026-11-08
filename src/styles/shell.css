@@ -209,6 +209,20 @@
   text-transform: uppercase;
 }
 
+/* The robot this entry waits for; muted while it is off the cloud. */
+.confession__robot {
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.confession__robot.is-waiting {
+  color: var(--warning);
+}
+
 .confession__meta .icon-button {
   margin-left: auto;
 }
@@ -258,6 +272,78 @@
 
 .sidebar__input::placeholder {
   color: var(--fg-faint);
+}
+
+/* Repeat count and platform of the entry being written. */
+.composer-options {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.composer-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.composer-option--grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-option__label {
+  color: var(--fg-faint);
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.composer-option__number {
+  width: 62px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.composer-option__number:disabled {
+  color: var(--fg-faint);
+}
+
+.composer-option__select {
+  width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12px;
+  outline: none;
+}
+
+.chip-toggle {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1;
+  transition:
+    border-color 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.chip-toggle.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .sidebar__composer .button {
@@ -626,14 +712,80 @@
   outline: none;
 }
 
-.stepper {
+/* ------------------------------------------------------------ cloud roster */
+
+.roster {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 0 12px;
 }
 
-.stepper__value {
-  min-width: 20px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
+.roster__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  transition: background 160ms var(--ease);
+}
+
+.roster__row:hover {
+  background: var(--surface);
+}
+
+/* A robot with a key keeps full contrast; the others fade back to the bench. */
+.roster__row.is-locked .roster__name {
+  color: var(--fg-faint);
+}
+
+.roster__pick {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.roster__row.is-locked .roster__pick {
+  cursor: default;
+}
+
+.roster__check {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: inherit;
+}
+
+.roster__name {
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.roster__row.is-on .roster__name {
+  color: var(--fg);
+}
+
+.roster__state {
+  flex: none;
+  color: var(--fg-faint);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.roster__link {
+  flex: none;
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

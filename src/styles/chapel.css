@@ -131,6 +131,11 @@
   color: var(--fg-faint);
 }
 
+/* An entry is pinned to a robot that is not standing on the cloud. */
+.status-chip--waiting {
+  color: var(--warning);
+}
+
 .status-chip__dot {
   width: 6px;
   height: 6px;

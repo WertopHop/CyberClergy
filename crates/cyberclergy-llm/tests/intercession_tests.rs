@@ -2,7 +2,8 @@
 //! and persistence. The network layer is not involved here on purpose.
 
 use cyberclergy_llm::{
-    target_for, IntercessionQueue, IntercessionStatus, Severity, Theme, MAX_TEXT_CHARS,
+    target_for, IntercessionQueue, IntercessionRequest, IntercessionStatus, ProviderId, Severity,
+    Theme, MAX_REPEAT, MAX_TEXT_CHARS,
 };
 
 const GUILT: &str = "я виноват перед мамой, прости меня, я соврал";
@@ -208,4 +209,135 @@ fn target_grows_with_severity_and_length() {
     assert_eq!(target_for(Severity::Urgent, 200), 7);
     assert_eq!(target_for(Severity::Steady, 500), 6);
     assert_eq!(target_for(Severity::Urgent, 900), 8);
+}
+
+#[test]
+fn an_asked_repeat_replaces_the_suggested_target() {
+    let mut queue = IntercessionQueue::new(2);
+    let twice = queue
+        .submit_with(
+            GUILT,
+            1,
+            IntercessionRequest {
+                repeat: Some(2),
+                ..IntercessionRequest::default()
+            },
+        )
+        .expect("valid")
+        .entry;
+    assert_eq!(twice.prayers_target, 2);
+
+    // Zero would leave the entry with nothing to pray for, so it grows to one.
+    let once = queue
+        .submit_with(
+            ILLNESS,
+            2,
+            IntercessionRequest {
+                repeat: Some(0),
+                ..IntercessionRequest::default()
+            },
+        )
+        .expect("valid")
+        .entry;
+    assert_eq!(once.prayers_target, 1);
+
+    // A typo cannot turn the counter into a lifetime obligation.
+    let long = queue
+        .submit_with(
+            WORK,
+            3,
+            IntercessionRequest {
+                repeat: Some(10_000),
+                ..IntercessionRequest::default()
+            },
+        )
+        .expect("valid")
+        .entry;
+    assert_eq!(long.prayers_target, MAX_REPEAT);
+}
+
+#[test]
+fn an_endless_entry_never_completes_on_its_own() {
+    let mut queue = IntercessionQueue::new(1);
+    let entry = queue
+        .submit_with(
+            WORK,
+            1,
+            IntercessionRequest {
+                endless: true,
+                ..IntercessionRequest::default()
+            },
+        )
+        .expect("valid")
+        .entry;
+    assert!(entry.endless);
+    assert_eq!(entry.prayers_target, 0);
+
+    for prayer in 0..25 {
+        let outcome = queue
+            .record_prayer(&entry.id, 10 + i64::from(prayer))
+            .expect("entry stays active");
+        assert!(!outcome.fulfilled);
+    }
+    assert_eq!(queue.active_count(), 1);
+    assert!(queue.next_task(&[]).is_some());
+
+    // Only an explicit dismissal ends it.
+    assert!(queue.cancel(&entry.id));
+    assert!(queue.next_task(&[]).is_none());
+}
+
+#[test]
+fn a_pinned_entry_waits_for_its_own_robot() {
+    let mut queue = IntercessionQueue::new(2);
+    queue.set_roster(&[ProviderId::Groq, ProviderId::Nvidia]);
+    let entry = queue
+        .submit_with(
+            ILLNESS,
+            1,
+            IntercessionRequest {
+                provider: Some(ProviderId::Nvidia),
+                ..IntercessionRequest::default()
+            },
+        )
+        .expect("valid")
+        .entry;
+
+    assert_eq!(entry.cleric, 1);
+    assert_eq!(entry.provider, Some(ProviderId::Nvidia));
+    let task = queue.next_task(&[]).expect("its robot is free");
+    assert_eq!(task.cleric, 1);
+    // The other robot being busy does not matter; its own being busy does.
+    assert!(queue.next_task(&[0]).is_some());
+    assert!(queue.next_task(&[1]).is_none());
+
+    // The robot leaves the cloud: the entry waits instead of switching banks.
+    queue.set_roster(&[ProviderId::Groq]);
+    assert!(queue.next_task(&[]).is_none());
+    assert_eq!(queue.active_count(), 1);
+
+    // And resumes the moment the network stands up again.
+    queue.set_roster(&[ProviderId::Groq, ProviderId::Nvidia]);
+    let resumed = queue.next_task(&[]).expect("the robot returned");
+    assert_eq!(resumed.cleric, 1);
+}
+
+#[test]
+fn a_pin_to_a_missing_network_is_dropped_instead_of_stuck() {
+    let mut queue = IntercessionQueue::new(2);
+    queue.set_roster(&[ProviderId::Groq]);
+    let entry = queue
+        .submit_with(
+            GUILT,
+            1,
+            IntercessionRequest {
+                provider: Some(ProviderId::Nvidia),
+                ..IntercessionRequest::default()
+            },
+        )
+        .expect("valid")
+        .entry;
+
+    assert_eq!(entry.provider, None);
+    assert!(queue.next_task(&[]).is_some());
 }

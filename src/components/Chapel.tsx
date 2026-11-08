@@ -1,14 +1,14 @@
-// The main screen: the cloud platform, a handful of praying clerics standing on
-// it, and a prayer floating above whoever is currently speaking. Rows are
-// symmetric (three at the back, two per row after) so the composition stays
-// balanced whatever the number of clerics or the aspect ratio.
+// The main screen: the cloud platform, one robot per network standing on it,
+// and a prayer floating above whoever is currently speaking. Rows are symmetric
+// (three per tier, the back one first) so the composition stays balanced
+// whatever the roster or the aspect ratio.
 import type { Translate } from "../i18n";
 import type { Dictionary } from "../i18n/locales/en";
 import type { Bubble } from "../hooks/useChapel";
+import { providerLabel } from "../lib/providers";
 import type {
   ChapelStatus,
   ProviderId,
-  ProviderView,
   ReligionProfile,
   Tempo,
   ThemeId,
@@ -21,9 +21,8 @@ interface ChapelProps {
   t: Translate;
   language: string;
   religion: ReligionProfile | null;
-  clerics: number;
-  /** Configured providers; their looks are handed out to the clerics in order. */
-  providers: ProviderView[];
+  /** Networks standing on the cloud, front slot first; slot `i` is cleric `i`. */
+  roster: ProviderId[];
   bubbles: Record<number, Bubble>;
   activeIndex: number | null;
   status: ChapelStatus | null;
@@ -75,6 +74,9 @@ function bubbleMeta(bubble: Bubble, t: Translate): string | null {
   const parts: string[] = [];
   if (bubble.ordinal !== null && bubble.target !== null) {
     parts.push(t("confessionalPraying", { done: bubble.ordinal, target: bubble.target }));
+  } else if (bubble.ordinal !== null) {
+    // An endless entry has no target: the counter keeps growing.
+    parts.push(t("confessionalEndlessCount", { done: bubble.ordinal }));
   }
   if (bubble.theme) {
     parts.push(t(THEME_KEYS[bubble.theme]));
@@ -98,6 +100,13 @@ function StatusBar({ t, status }: { t: Translate; status: ChapelStatus | null })
       {status.pending > 0 ? (
         <span className="status-chip status-chip--muted">
           {t("chapelPending", { count: status.pending })}
+        </span>
+      ) : null}
+      {status.waiting_for ? (
+        <span className="status-chip status-chip--waiting">
+          {t("chapelWaitingFor", {
+            provider: providerLabel(status.waiting_for, t),
+          })}
         </span>
       ) : null}
       <span className="status-chip status-chip--muted">
@@ -133,38 +142,29 @@ export function Chapel({
   t,
   language,
   religion,
-  clerics,
-  providers,
+  roster,
   bubbles,
   activeIndex,
   status,
   enabled,
   onOpenSettings,
 }: ChapelProps) {
-  const rows = layoutRows(clerics);
+  const rows = roster.length > 0 ? layoutRows(roster.length) : [];
   const traditionName = religion
     ? religion.identity.names[language] ??
       religion.identity.names.en ??
       religion.id
     : "";
 
-  // Until the roster binds each cleric to a network, the looks go round the
-  // configured providers, which still shows every house on the cloud.
-  const deck = providers
-    .filter((provider) => provider.configured)
-    .map((provider) => provider.id);
-  const lookAt = (index: number): ProviderId | undefined =>
-    deck.length > 0 ? deck[index % deck.length] : undefined;
-
   let robotIndex = 0;
 
   return (
     <main className="chapel">
-      <CloudPlatform rows={rows.length} />
+      <CloudPlatform rows={Math.max(rows.length, 1)} />
 
       <header className="chapel__caption">
         <h1 className="chapel__tradition">{traditionName}</h1>
-        <p className="chapel__meta">{t("chapelMeta", { count: clerics })}</p>
+        <p className="chapel__meta">{t("chapelMeta", { count: roster.length })}</p>
       </header>
 
       <StatusBar t={t} status={status} />
@@ -204,7 +204,7 @@ export function Chapel({
                     praying={activeIndex === index}
                     seed={index + 1}
                     scale={0.86 + rowIndex * 0.11}
-                    variant={lookAt(index)}
+                    variant={roster[index]}
                   />
                 </div>
               );
@@ -225,6 +225,20 @@ export function Chapel({
             onClick={onOpenSettings}
           >
             {t("chapelEmptyAction")}
+          </button>
+        </div>
+      ) : null}
+
+      {enabled && roster.length === 0 ? (
+        <div className="empty-card">
+          <h2 className="empty-card__title">{t("chapelNoRobotsTitle")}</h2>
+          <p className="empty-card__body">{t("chapelNoRobotsBody")}</p>
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={onOpenSettings}
+          >
+            {t("chapelNoRobotsAction")}
           </button>
         </div>
       ) : null}

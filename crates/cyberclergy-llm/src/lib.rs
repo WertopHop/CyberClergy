@@ -19,12 +19,12 @@ pub mod providers;
 pub mod redact;
 pub mod types;
 
-pub use clergy::intercession::{target_for, MAX_TEXT_CHARS};
+pub use clergy::intercession::{target_for, MAX_REPEAT, MAX_TEXT_CHARS};
 pub use clergy::scheduler::{DEFAULT_BUDGET_PER_HOUR, OFFLINE_AFTER_FAILURES};
 pub use clergy::{
-    Cadence, Direction, Health, Intercession, IntercessionQueue, IntercessionStatus,
-    IntercessionTask, Meter, Pace, Policy, ProfileCatalog, ProfileError, QueueError, RecordOutcome,
-    ReligionProfile, Severity, SubmitOutcome, Tempo, Theme,
+    Cadence, Direction, Health, Intercession, IntercessionQueue, IntercessionRequest,
+    IntercessionStatus, IntercessionTask, Meter, Pace, Policy, ProfileCatalog, ProfileError,
+    QueueError, RecordOutcome, ReligionProfile, Severity, SubmitOutcome, Tempo, Theme,
 };
 pub use config::{
     ProviderConfig, ProviderSpec, ProviderStatus, Protocol, Settings, SharedSettings,

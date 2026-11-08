@@ -4,9 +4,19 @@
 // local classification of an entry into a direction. This module exists only so
 // the interface can be inspected with `npm run dev`, without Tauri: it stores
 // entries in memory, spreads them over the clerics and counts prayers down.
-import type { ConfessionEntry, ConfessionOutcome } from "./types";
+import type { ConfessionEntry, ConfessionOutcome, ProviderId } from "./types";
 
 const MAX_ENTRIES = 50;
+/** Longest recital the preview accepts, mirroring the backend's `MAX_REPEAT`. */
+const MAX_REPEAT = 999;
+/** Target the preview suggests when the person did not ask for a count. */
+const SUGGESTED_TARGET = 5;
+
+export interface PreviewEntryRequest {
+  repeat: number | null;
+  endless: boolean;
+  provider: ProviderId | null;
+}
 
 let entries: ConfessionEntry[] = [];
 let serial = 0;
@@ -23,7 +33,12 @@ export function previewList(): ConfessionEntry[] {
   return entries.map(clone);
 }
 
-export function previewSubmit(text: string, clerics: number): ConfessionOutcome {
+export function previewSubmit(
+  text: string,
+  request: PreviewEntryRequest,
+  clerics: number,
+  robots: ProviderId[],
+): ConfessionOutcome {
   const trimmed = text.trim();
   const normalized = trimmed.toLocaleLowerCase();
   const existing = entries.find(
@@ -35,6 +50,11 @@ export function previewSubmit(text: string, clerics: number): ConfessionOutcome 
 
   serial += 1;
   const slot = Math.max(clerics, 1);
+  const provider =
+    request.provider && robots.includes(request.provider) ? request.provider : null;
+  const pinned = provider ? robots.indexOf(provider) : -1;
+  const endless = request.endless;
+  const repeat = Math.min(Math.max(request.repeat ?? SUGGESTED_TARGET, 1), MAX_REPEAT);
   const entry: ConfessionEntry = {
     id: `preview-${Date.now()}-${serial}`,
     text: trimmed,
@@ -42,9 +62,11 @@ export function previewSubmit(text: string, clerics: number): ConfessionOutcome 
     theme: "unnamed",
     severity: "steady",
     direction: PREVIEW_DIRECTION,
-    cleric: serial % slot,
+    cleric: pinned >= 0 ? pinned : serial % slot,
     prayers_done: 0,
-    prayers_target: 5,
+    prayers_target: endless ? 0 : repeat,
+    endless,
+    provider,
     status: "queued",
     last_prayed_at: null,
   };
@@ -76,7 +98,7 @@ export function previewAdvance(now: number): ConfessionEntry | null {
     return null;
   }
   const done = target.prayers_done + 1;
-  const fulfilled = done >= target.prayers_target;
+  const fulfilled = !target.endless && done >= target.prayers_target;
   entries = entries.map((entry) =>
     entry.id === target.id
       ? {

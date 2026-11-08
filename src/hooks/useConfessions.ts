@@ -8,6 +8,7 @@ import {
   forgetFinishedConfessions,
   listConfessions,
   submitConfession,
+  type ConfessionRequest,
 } from "../lib/bridge";
 import type { ConfessionEntry } from "../lib/types";
 
@@ -22,7 +23,7 @@ export interface ConfessionsState {
   notice: ConfessionNotice;
   error: string | null;
   /** Resolves to true when the entry is stored or already waiting. */
-  add: (text: string) => Promise<boolean>;
+  add: (text: string, request: ConfessionRequest) => Promise<boolean>;
   cancel: (id: string) => Promise<void>;
   forget: () => Promise<void>;
   reload: () => void;
@@ -69,11 +70,11 @@ export function useConfessions(): ConfessionsState {
   }, [reload]);
 
   const add = useCallback(
-    async (text: string): Promise<boolean> => {
+    async (text: string, request: ConfessionRequest): Promise<boolean> => {
       setBusy(true);
       setError(null);
       try {
-        const outcome = await submitConfession(text);
+        const outcome = await submitConfession(text, request);
         const loaded = await listConfessions();
         setEntries(loaded);
         showNotice(outcome.duplicate ? "duplicate" : null);

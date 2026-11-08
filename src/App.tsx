@@ -12,6 +12,7 @@ import { useConfessions } from "./hooks/useConfessions";
 import { usePreferences } from "./hooks/usePreferences";
 import { useTranslate } from "./i18n";
 import { listProviders, listReligions } from "./lib/bridge";
+import { cloudRoster } from "./lib/providers";
 import type { ProviderView, ReligionProfile } from "./lib/types";
 
 export default function App() {
@@ -58,7 +59,21 @@ export default function App() {
     [religions, preferences.religion],
   );
 
-  const enabled = providers.some((provider) => provider.configured);
+  // Robots standing on the cloud. The backend resolves the same rule, so slot
+  // `i` here is slot `i` in the scheduler and the confessional queue.
+  const configured = useMemo(
+    () =>
+      providers
+        .filter((provider) => provider.configured)
+        .map((provider) => provider.id),
+    [providers],
+  );
+  const roster = useMemo(
+    () => cloudRoster(preferences.roster, configured),
+    [preferences.roster, configured],
+  );
+
+  const enabled = configured.length > 0;
 
   const chapel = useChapel({ enabled });
   const confessions = useConfessions();
@@ -100,6 +115,7 @@ export default function App() {
           t={t}
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          robots={roster}
           entries={confessions.entries}
           busy={confessions.busy}
           notice={confessions.notice}
@@ -117,8 +133,7 @@ export default function App() {
           t={t}
           language={preferences.language}
           religion={religion}
-          clerics={preferences.clerics}
-          providers={providers}
+          roster={roster}
           bubbles={chapel.bubbles}
           activeIndex={chapel.activeIndex}
           status={chapel.status}
@@ -133,6 +148,7 @@ export default function App() {
           preferences={preferences}
           onChange={update}
           providers={providers}
+          roster={roster}
           religions={religions}
           status={chapel.status}
           onProviders={setProviders}

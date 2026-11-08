@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import type { Translate } from "../i18n";
 import { checkProvider, clearProvider, prayerStats, saveProviderField } from "../lib/bridge";
+import { MAX_ROBOTS, providerLabel, providerName } from "../lib/providers";
 import type {
   ChapelStatus,
   Pace,
@@ -18,17 +19,6 @@ import type {
 } from "../lib/types";
 import { IconChevron, IconClose } from "./Icons";
 
-const MIN_CLERICS = 3;
-const MAX_CLERICS = 9;
-const PROVIDER_IDS: ProviderId[] = [
-  "openrouter",
-  "gemini",
-  "groq",
-  "mistral",
-  "cloudflare",
-  "nvidia",
-];
-
 interface SettingsPanelProps {
   t: Translate;
   open: boolean;
@@ -36,37 +26,11 @@ interface SettingsPanelProps {
   preferences: Preferences;
   onChange: (patch: Partial<Preferences>) => void;
   providers: ProviderView[];
+  /** Effective roster: configured networks currently standing on the cloud. */
+  roster: ProviderId[];
   religions: ReligionProfile[];
   status: ChapelStatus | null;
   onProviders: (providers: ProviderView[]) => void;
-}
-
-function providerLabel(id: ProviderId, t: Translate): string {
-  switch (id) {
-    case "openrouter":
-      return t("providerOpenRouter");
-    case "gemini":
-      return t("providerGemini");
-    case "groq":
-      return t("providerGroq");
-    case "mistral":
-      return t("providerMistral");
-    case "cloudflare":
-      return t("providerCloudflare");
-    case "nvidia":
-      return t("providerNvidia");
-    default:
-      return id;
-  }
-}
-
-/** Journal rows name networks by their id; the quiet canon is not a network. */
-function providerName(id: string, t: Translate): string {
-  if (id === "quiet") {
-    return t("statsProviderQuiet");
-  }
-  const known = PROVIDER_IDS.find((candidate) => candidate === id);
-  return known ? providerLabel(known, t) : id;
 }
 
 function fieldLabel(name: string, t: Translate): string {
@@ -347,6 +311,7 @@ export function SettingsPanel({
   preferences,
   onChange,
   providers,
+  roster,
   religions,
   status,
   onProviders,
@@ -354,6 +319,15 @@ export function SettingsPanel({
   const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(
     null,
   );
+
+  // The stored roster is written back whole: after the first toggle `null`
+  // ("never chosen") never returns, so an emptied cloud stays empty.
+  const toggleRobot = (id: ProviderId) => {
+    const next = roster.includes(id)
+      ? roster.filter((candidate) => candidate !== id)
+      : [...roster, id].slice(0, MAX_ROBOTS);
+    onChange({ roster: next });
+  };
 
   return (
     <>
@@ -411,6 +385,62 @@ export function SettingsPanel({
           </section>
 
           <section className="group">
+            <h3 className="group__title">{t("settingsRoster")}</h3>
+            <p className="group__hint">{t("settingsRosterHint")}</p>
+            <div className="roster">
+              {providers.map((provider) => {
+                const onCloud = roster.includes(provider.id);
+                return (
+                  <div
+                    className={`roster__row ${
+                      onCloud ? "is-on" : ""
+                    } ${provider.configured ? "" : "is-locked"}`}
+                    key={provider.id}
+                  >
+                    <label className="roster__pick">
+                      <input
+                        type="checkbox"
+                        className="roster__check"
+                        checked={onCloud}
+                        disabled={!provider.configured}
+                        onChange={() => toggleRobot(provider.id)}
+                      />
+                      <span className="roster__name">
+                        {providerLabel(provider.id, t)}
+                      </span>
+                    </label>
+                    <span className="roster__state">
+                      {provider.configured
+                        ? onCloud
+                          ? t("rosterOnCloud")
+                          : t("rosterBench")
+                        : t("settingsRosterNeedsKey")}
+                    </span>
+                    {provider.configured ? null : (
+                      <button
+                        type="button"
+                        className="roster__link"
+                        onClick={() => setExpandedProvider(provider.id)}
+                      >
+                        {t("rosterAddKey")}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="row">
+              <span className="row__label">{t("rosterCountLabel")}</span>
+              <span className="row__value">
+                {t("settingsRosterCount", {
+                  count: roster.length,
+                  max: MAX_ROBOTS,
+                })}
+              </span>
+            </div>
+          </section>
+
+          <section className="group">
             <h3 className="group__title">{t("settingsAppearance")}</h3>
             <div className="row">
               <span className="row__label">{t("theme")}</span>
@@ -455,36 +485,6 @@ export function SettingsPanel({
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="row">
-              <span className="row__label">{t("clerics")}</span>
-              <div className="stepper">
-                <button
-                  type="button"
-                  className="button button--small"
-                  aria-label="-"
-                  onClick={() =>
-                    onChange({
-                      clerics: Math.max(MIN_CLERICS, preferences.clerics - 1),
-                    })
-                  }
-                >
-                  −
-                </button>
-                <span className="stepper__value">{preferences.clerics}</span>
-                <button
-                  type="button"
-                  className="button button--small"
-                  aria-label="+"
-                  onClick={() =>
-                    onChange({
-                      clerics: Math.min(MAX_CLERICS, preferences.clerics + 1),
-                    })
-                  }
-                >
-                  +
-                </button>
-              </div>
             </div>
             <div className="row">
               <span className="row__label">{t("pace")}</span>

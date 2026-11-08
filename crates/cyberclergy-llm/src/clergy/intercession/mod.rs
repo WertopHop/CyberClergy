@@ -4,7 +4,8 @@
 //! exactly one cleric, and prayed for a limited number of times. The counter is
 //! the whole point: a request is not a subscription, so after
 //! [`Intercession::prayers_target`] prayers the entry is fulfilled and the
-//! cleric returns to the ordinary rotation.
+//! cleric returns to the ordinary rotation. A person may also ask for an
+//! endless recital, or pin the entry to one network.
 //!
 //! The queue is deliberately independent of the network layer and of Tauri. The
 //! scheduler only asks [`IntercessionQueue::next_task`] what to pray for and
@@ -19,6 +20,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::types::ProviderId;
+
 /// Longest entry the confessional accepts. Anything longer is a sign that the
 /// person needs a conversation, not a longer queue item.
 pub const MAX_TEXT_CHARS: usize = 1000;
@@ -28,6 +31,10 @@ pub const DEFAULT_CLERICS: usize = 7;
 
 /// Hard ceiling for the prayer counter, whatever the severity.
 pub const MAX_TARGET: u32 = 9;
+
+/// Longest recital a person may ask for. The upper bound is a guard against a
+/// typo turning the queue into a permanent obligation.
+pub const MAX_REPEAT: u32 = 999;
 
 /// How many times an entry is prayed for, by severity. A pressing entry gets
 /// more rounds; a long entry gets one extra round because it carries more.
@@ -73,6 +80,13 @@ pub struct Intercession {
     pub cleric: usize,
     pub prayers_done: u32,
     pub prayers_target: u32,
+    /// Recites until the person dismisses the entry; the counter then never
+    /// reaches a target and `prayers_target` stays zero.
+    #[serde(default)]
+    pub endless: bool,
+    /// Network the person pinned the entry to; `None` lets the queue choose.
+    #[serde(default)]
+    pub provider: Option<ProviderId>,
     pub status: IntercessionStatus,
     pub last_prayed_at: Option<i64>,
 }
@@ -83,8 +97,28 @@ impl Intercession {
     }
 
     pub fn remaining(&self) -> u32 {
-        self.prayers_target.saturating_sub(self.prayers_done)
+        if self.endless {
+            0
+        } else {
+            self.prayers_target.saturating_sub(self.prayers_done)
+        }
     }
+}
+
+/// What the person asked for when writing the entry down.
+///
+/// Every field is optional on purpose: the confessional may only offer the
+/// text, and the queue then applies the severity-based defaults.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct IntercessionRequest {
+    /// Number of prayers to recite; `None` keeps the count suggested by the
+    /// severity. Ignored when `endless` is set.
+    pub repeat: Option<u32>,
+    /// Recite until the entry is dismissed, however many prayers that takes.
+    pub endless: bool,
+    /// Pin the entry to one network instead of letting the queue pick.
+    pub provider: Option<ProviderId>,
 }
 
 /// A single prayer the scheduler should compose next.
@@ -98,6 +132,8 @@ pub struct IntercessionTask {
     /// 1-based index of this prayer within the entry.
     pub ordinal: u32,
     pub target: u32,
+    /// The entry has no target: the event reports `target` as unknown.
+    pub endless: bool,
 }
 
 /// Outcome of reporting a finished prayer.
@@ -147,6 +183,10 @@ pub struct IntercessionQueue {
     entries: Vec<Intercession>,
     #[serde(default = "default_clerics")]
     clerics: usize,
+    /// Networks standing on the cloud, slot by slot. Kept next to the entries
+    /// so a slot can tell whether it is allowed to serve a pinned entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    roster: Vec<ProviderId>,
     next_serial: u64,
 }
 
@@ -155,6 +195,7 @@ impl Default for IntercessionQueue {
         Self {
             entries: Vec::new(),
             clerics: DEFAULT_CLERICS,
+            roster: Vec::new(),
             next_serial: 0,
         }
     }
@@ -170,6 +211,30 @@ impl IntercessionQueue {
 
     pub fn clerics(&self) -> usize {
         self.clerics
+    }
+
+    /// Networks standing on the cloud, slot by slot.
+    pub fn roster(&self) -> &[ProviderId] {
+        &self.roster
+    }
+
+    /// Adopts a new cloud composition. Slots keep their numbers, entries keep
+    /// their robot when it is still standing, and a pinned entry follows its
+    /// network to its new slot.
+    pub fn set_roster(&mut self, roster: &[ProviderId]) {
+        if self.roster == roster {
+            return;
+        }
+        self.roster = roster.to_vec();
+        self.set_clerics(roster.len());
+        let roster = self.roster.clone();
+        for entry in self.entries.iter_mut().filter(|entry| entry.is_active()) {
+            if let Some(provider) = entry.provider {
+                if let Some(slot) = roster.iter().position(|id| *id == provider) {
+                    entry.cleric = slot;
+                }
+            }
+        }
     }
 
     /// Keeps assignments valid after the user changes how many clerics stand on
@@ -206,10 +271,20 @@ impl IntercessionQueue {
         self.active().filter(|entry| entry.cleric == cleric).count()
     }
 
+    /// Queues an entry with the defaults of its severity.
+    pub fn submit(&mut self, text: &str, now: i64) -> Result<SubmitOutcome, QueueError> {
+        self.submit_with(text, now, IntercessionRequest::default())
+    }
+
     /// Reads the text, assigns a cleric and queues the entry. Submitting the
     /// same text twice while the first copy is still pending returns the
     /// existing entry instead of piling up duplicates.
-    pub fn submit(&mut self, text: &str, now: i64) -> Result<SubmitOutcome, QueueError> {
+    pub fn submit_with(
+        &mut self,
+        text: &str,
+        now: i64,
+        request: IntercessionRequest,
+    ) -> Result<SubmitOutcome, QueueError> {
         let trimmed = text.trim();
         if trimmed.is_empty() {
             return Err(QueueError::EmptyEntry);
@@ -234,7 +309,14 @@ impl IntercessionQueue {
         }
 
         let direction = Direction::derive(trimmed);
-        let cleric = self.assign_cleric();
+        let repeat = request.repeat.map(|count| count.clamp(1, MAX_REPEAT));
+        // A pin to a network that is not on the cloud would leave the entry
+        // waiting forever, so it is dropped instead of honoured.
+        let provider = request
+            .provider
+            .filter(|id| self.roster.iter().any(|slot| slot == id));
+        let endless = request.endless;
+        let cleric = self.assign_cleric(provider);
         let id = format!("ic-{now}-{}", self.next_serial);
         self.next_serial += 1;
 
@@ -247,7 +329,13 @@ impl IntercessionQueue {
             direction: direction.intent,
             cleric,
             prayers_done: 0,
-            prayers_target: target_for(direction.severity, characters),
+            prayers_target: if endless {
+                0
+            } else {
+                repeat.unwrap_or_else(|| target_for(direction.severity, characters))
+            },
+            endless,
+            provider,
             status: IntercessionStatus::Queued,
             last_prayed_at: None,
         };
@@ -274,11 +362,14 @@ impl IntercessionQueue {
     }
 
     /// The next prayer to compose, preferring pressing entries and leaving
-    /// alone the clerics that are busy right now.
+    /// alone the clerics that are busy right now. An entry pinned to a network
+    /// is only offered to the slot that runs it.
     pub fn next_task(&self, busy: &[usize]) -> Option<IntercessionTask> {
         self.entries
             .iter()
-            .filter(|entry| entry.is_active() && !busy.contains(&entry.cleric))
+            .filter(|entry| {
+                entry.is_active() && !busy.contains(&entry.cleric) && self.slot_serves(entry)
+            })
             .min_by_key(|entry| (entry.severity, entry.created_at, entry.cleric))
             .map(|entry| IntercessionTask {
                 id: entry.id.clone(),
@@ -288,7 +379,16 @@ impl IntercessionQueue {
                 severity: entry.severity,
                 ordinal: entry.prayers_done + 1,
                 target: entry.prayers_target,
+                endless: entry.endless,
             })
+    }
+
+    /// Whether the entry's robot is the one that runs its network.
+    fn slot_serves(&self, entry: &Intercession) -> bool {
+        match entry.provider {
+            Some(provider) => self.roster.get(entry.cleric) == Some(&provider),
+            None => true,
+        }
     }
 
     /// Counts one finished prayer. Only successful calls may be recorded, so a
@@ -300,7 +400,7 @@ impl IntercessionQueue {
             .find(|entry| entry.id == id && entry.is_active())?;
         entry.prayers_done += 1;
         entry.last_prayed_at = Some(now);
-        let fulfilled = entry.prayers_done >= entry.prayers_target;
+        let fulfilled = !entry.endless && entry.prayers_done >= entry.prayers_target;
         if fulfilled {
             entry.status = IntercessionStatus::Fulfilled;
         }
@@ -341,12 +441,22 @@ impl IntercessionQueue {
     }
 
     /// Picks the cleric with the fewest pending entries, rotating the starting
-    /// point so two equally loaded clerics take turns.
-    fn assign_cleric(&self) -> usize {
+    /// point so two equally loaded clerics take turns. A pin narrows the choice
+    /// to the slots that run the chosen network.
+    fn assign_cleric(&self, provider: Option<ProviderId>) -> usize {
         let count = self.clerics.max(MIN_CLERICS);
         let start = (self.next_serial as usize) % count;
-        (0..count)
-            .map(|offset| (start + offset) % count)
+        let rotating = || (0..count).map(move |offset| (start + offset) % count);
+        let pinned: Vec<usize> = rotating()
+            .filter(|slot| provider.is_none_or(|id| self.roster.get(*slot) == Some(&id)))
+            .collect();
+        let candidates: Vec<usize> = if pinned.is_empty() {
+            rotating().collect()
+        } else {
+            pinned
+        };
+        candidates
+            .into_iter()
             .min_by_key(|cleric| self.pending_count(*cleric))
             .unwrap_or(0)
     }

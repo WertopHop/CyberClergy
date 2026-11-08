@@ -30,7 +30,11 @@ export interface Preferences {
   language: string;
   theme: string;
   religion: string;
-  clerics: number;
+  /**
+   * Networks standing on the cloud, front slot first. `null` means the person
+   * never chose: every configured network then stands up.
+   */
+  roster: ProviderId[] | null;
   pace: Pace;
 }
 
@@ -92,6 +96,8 @@ export interface ChapelStatus {
   storage: "keychain" | "file";
   error: string | null;
   next_in_secs: number | null;
+  /** Network an entry is pinned to but which no robot on the cloud runs. */
+  waiting_for: ProviderId | null;
 }
 
 export type PrayerSource = "schedule" | "intercession" | "quiet";
@@ -144,7 +150,12 @@ export interface ConfessionEntry {
   direction: string;
   cleric: number;
   prayers_done: number;
+  /** Zero for an endless entry: the counter never reaches a target. */
   prayers_target: number;
+  /** Recites until dismissed instead of counting down to a target. */
+  endless: boolean;
+  /** Network the person pinned the entry to; `null` lets the queue choose. */
+  provider: ProviderId | null;
   status: IntercessionStatus;
   last_prayed_at: number | null;
 }

@@ -24,9 +24,8 @@ pub const SUPPORTED_THEMES: &[&str] = &["night", "dawn"];
 pub const DEFAULT_LANGUAGE: &str = "ru";
 pub const DEFAULT_THEME: &str = "night";
 pub const DEFAULT_RELIGION: &str = "christianity";
-pub const MIN_CLERICS: usize = 3;
-pub const MAX_CLERICS: usize = 9;
-pub const DEFAULT_CLERICS: usize = 7;
+/// Highest number of robots the cloud holds: three tiers of three.
+pub const MAX_ROBOTS: usize = 9;
 
 /// Settings the user can change from the interface.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,10 +35,15 @@ pub struct Preferences {
     pub theme: String,
     /// Religion used by the chapel. Validated against the profile catalog.
     pub religion: String,
-    /// Number of clerics standing on the cloud.
-    pub clerics: usize,
+    /// Networks standing on the cloud, front slot first. `None` means the person
+    /// has never chosen one: every configured network then stands up.
+    pub roster: Option<Vec<ProviderId>>,
     /// How often the cloud prays: `calm`, `normal` or `lively`.
     pub pace: String,
+    /// Draft-era cleric count. Read so an old settings file still parses, never
+    /// written back: the roster supersedes it.
+    #[serde(rename = "clerics", default, skip_serializing)]
+    legacy_clerics: Option<usize>,
 }
 
 impl Default for Preferences {
@@ -48,8 +52,9 @@ impl Default for Preferences {
             language: DEFAULT_LANGUAGE.to_string(),
             theme: DEFAULT_THEME.to_string(),
             religion: DEFAULT_RELIGION.to_string(),
-            clerics: DEFAULT_CLERICS,
+            roster: None,
             pace: Pace::default().as_str().to_string(),
+            legacy_clerics: None,
         }
     }
 }
@@ -58,6 +63,23 @@ impl Preferences {
     /// The stored pace, coerced to the default when the file was edited by hand.
     pub fn pace(&self) -> Pace {
         Pace::parse(&self.pace).unwrap_or_default()
+    }
+
+    /// Networks actually standing on the cloud, slot by slot.
+    ///
+    /// A stored roster keeps its order and loses only networks whose
+    /// credentials are gone; `None` means the person never picked, so every
+    /// configured network stands up. That keeps the chapel lit after an upgrade
+    /// from the draft-era numeric count.
+    pub fn cloud(&self, configured: &[ProviderId]) -> Vec<ProviderId> {
+        match &self.roster {
+            Some(roster) => roster
+                .iter()
+                .filter(|id| configured.contains(id))
+                .copied()
+                .collect(),
+            None => configured.iter().copied().take(MAX_ROBOTS).collect(),
+        }
     }
 
     /// Coerces out-of-range values instead of rejecting them: a typo in a
@@ -75,7 +97,15 @@ impl Preferences {
         } else {
             religion
         };
-        self.clerics = self.clerics.clamp(MIN_CLERICS, MAX_CLERICS);
+        self.roster = self.roster.map(|roster| {
+            let mut seen = std::collections::BTreeSet::new();
+            roster
+                .into_iter()
+                .filter(|id| seen.insert(*id))
+                .take(MAX_ROBOTS)
+                .collect()
+        });
+        self.legacy_clerics = None;
         self.pace = self.pace().as_str().to_string();
         self
     }
@@ -250,16 +280,41 @@ mod tests {
             language: "klingon".to_string(),
             theme: "neon".to_string(),
             religion: "  ".to_string(),
-            clerics: 500,
+            roster: Some(vec![ProviderId::Groq, ProviderId::Groq, ProviderId::Gemini]),
             pace: "hectic".to_string(),
+            legacy_clerics: Some(4),
         }
         .sanitized();
 
         assert_eq!(preferences.language, DEFAULT_LANGUAGE);
         assert_eq!(preferences.theme, DEFAULT_THEME);
         assert_eq!(preferences.religion, DEFAULT_RELIGION);
-        assert_eq!(preferences.clerics, MAX_CLERICS);
+        // Duplicates collapse and the legacy count is dropped.
+        assert_eq!(
+            preferences.roster,
+            Some(vec![ProviderId::Groq, ProviderId::Gemini])
+        );
         assert_eq!(preferences.pace, "normal");
+    }
+
+    #[test]
+    fn an_unset_roster_stands_up_every_configured_network() {
+        let preferences = Preferences::default();
+        let configured = [ProviderId::Groq, ProviderId::Mistral];
+        assert_eq!(preferences.cloud(&configured), configured.to_vec());
+
+        let chosen = Preferences {
+            roster: Some(vec![ProviderId::Nvidia, ProviderId::Groq]),
+            ..Preferences::default()
+        };
+        // The stored order wins and a network without credentials drops out.
+        assert_eq!(chosen.cloud(&configured), vec![ProviderId::Groq]);
+        // An emptied roster really means an empty cloud.
+        let empty = Preferences {
+            roster: Some(Vec::new()),
+            ..Preferences::default()
+        };
+        assert!(empty.cloud(&configured).is_empty());
     }
 
     #[test]
@@ -271,8 +326,9 @@ mod tests {
                 language: "en".to_string(),
                 theme: "dawn".to_string(),
                 religion: "islam".to_string(),
-                clerics: 5,
+                roster: Some(vec![ProviderId::Groq, ProviderId::Mistral]),
                 pace: "Calm".to_string(),
+                legacy_clerics: None,
             })
             .expect("preferences are writable");
         store
@@ -282,6 +338,10 @@ mod tests {
         let reloaded = PrefsStore::open(&path);
         assert_eq!(reloaded.preferences().religion, "islam");
         assert_eq!(reloaded.preferences().theme, "dawn");
+        assert_eq!(
+            reloaded.preferences().roster,
+            Some(vec![ProviderId::Groq, ProviderId::Mistral])
+        );
         // The pace is stored in its canonical spelling, whatever was typed.
         assert_eq!(reloaded.preferences().pace, "calm");
         assert_eq!(
@@ -290,6 +350,40 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(path.parent().unwrap_or(&path));
+    }
+
+    #[test]
+    fn a_draft_era_file_keeps_its_keys() {
+        let path = temp_path("legacy");
+        let parent = path.parent().expect("the path has a parent");
+        fs::create_dir_all(parent).expect("the directory is creatable");
+        fs::write(
+            &path,
+            r#"{
+  "preferences": {
+    "language": "en",
+    "theme": "dawn",
+    "religion": "judaism",
+    "clerics": 5,
+    "pace": "lively"
+  },
+  "keys": { "GROQ_API_KEY": "gsk-legacy" }
+}"#,
+        )
+        .expect("the fixture is writable");
+
+        let store = PrefsStore::open(&path);
+        let preferences = store.preferences();
+        assert_eq!(preferences.language, "en");
+        assert_eq!(preferences.religion, "judaism");
+        // No roster yet: the chapel stands every configured network up.
+        assert_eq!(preferences.roster, None);
+        assert_eq!(
+            store.keys().get("GROQ_API_KEY"),
+            Some(&"gsk-legacy".to_string())
+        );
+
+        let _ = fs::remove_dir_all(parent);
     }
 
     #[test]

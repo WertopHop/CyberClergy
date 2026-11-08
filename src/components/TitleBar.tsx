@@ -1,6 +1,10 @@
 // Custom window chrome: the window is decorationless, so dragging, minimizing,
 // maximizing and closing are provided here through the Tauri window API.
+// Dragging is bound to the whole bar through an explicit handler: the attribute
+// based drag region only covers the element it sits on, which left most of the
+// bar dead between the menu button and the window controls.
 import { useEffect, useState } from "react";
+import type { MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { Translate } from "../i18n";
@@ -63,8 +67,25 @@ export function TitleBar({ t, sidebarOpen, onToggleSidebar }: TitleBarProps) {
     appWindow?.toggleMaximize().catch(() => undefined);
   };
 
+  // Controls keep their own behaviour; everything else in the bar drags the
+  // window. A double click toggles maximize like the native title bar does.
+  const onBarMouseDown = (event: MouseEvent<HTMLElement>) => {
+    if (!appWindow || event.button !== 0) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button, a, input, textarea, select, [data-no-drag]")) {
+      return;
+    }
+    if (event.detail === 2) {
+      toggleMaximize();
+      return;
+    }
+    appWindow.startDragging().catch(() => undefined);
+  };
+
   return (
-    <header className="titlebar" data-tauri-drag-region>
+    <header className="titlebar" onMouseDown={onBarMouseDown}>
       <div className="titlebar__side">
         <button
           type="button"
@@ -78,13 +99,9 @@ export function TitleBar({ t, sidebarOpen, onToggleSidebar }: TitleBarProps) {
         </button>
       </div>
 
-      <div
-        className="titlebar__title"
-        data-tauri-drag-region
-        onDoubleClick={toggleMaximize}
-      >
+      <div className="titlebar__title">
         <span className="titlebar__mark" aria-hidden="true" />
-        <span data-tauri-drag-region>{t("appName")}</span>
+        <span>{t("appName")}</span>
       </div>
 
       <div className="titlebar__side titlebar__side--end">

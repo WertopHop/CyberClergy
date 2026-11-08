@@ -60,7 +60,6 @@ function CloudBackdrop() {
   return (
     <div className="clouds" aria-hidden="true">
       <div className="clouds__sky" />
-      <div className="clouds__glow" />
       <svg
         className="clouds__art"
         viewBox="0 0 1200 800"

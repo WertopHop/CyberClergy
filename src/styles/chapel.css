@@ -1,5 +1,5 @@
-/* The chapel: gradient sky, a symmetric cloud mound, praying clerics and the
-   prayer that floats above whoever is speaking. */
+/* The chapel: a flat warm backdrop, a symmetric cloud mound, praying clerics and
+   the prayer that floats above whoever is speaking. */
 
 .chapel {
   position: relative;
@@ -22,21 +22,7 @@
 .clouds__sky {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-bottom) 100%);
-}
-
-.clouds__glow {
-  position: absolute;
-  top: -30%;
-  right: -14%;
-  width: 84%;
-  aspect-ratio: 1;
-  background: radial-gradient(
-    circle at 50% 50%,
-    var(--glow) 0%,
-    var(--glow-soft) 36%,
-    transparent 68%
-  );
+  background: var(--bg);
 }
 
 .clouds__art {
@@ -189,7 +175,6 @@
   border-radius: 12px;
   background: var(--bubble-bg);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(10px);
   animation: bubble-in 520ms var(--ease) both;
 }
 
@@ -385,7 +370,6 @@
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38);
   text-align: center;
   transform: translate(-50%, -50%);
-  backdrop-filter: blur(20px);
 }
 
 .empty-card__title {
@@ -416,7 +400,6 @@
   background: var(--bg-elevated);
   text-align: center;
   transform: translateX(-50%);
-  backdrop-filter: blur(14px);
 }
 
 .chapel__notice-title {

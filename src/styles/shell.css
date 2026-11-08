@@ -5,6 +5,7 @@
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  background: var(--bg);
 }
 
 .app__body {
@@ -24,9 +25,8 @@
   align-items: center;
   height: var(--titlebar-height);
   padding-left: 6px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elevated);
-  backdrop-filter: blur(16px);
+  background: var(--bg);
+  user-select: none;
 }
 
 .titlebar__side {
@@ -102,7 +102,6 @@
   max-width: 84vw;
   border-right: 1px solid var(--border);
   background: var(--bg-elevated);
-  backdrop-filter: blur(22px);
   transform: translateX(-100%);
   transition: transform 260ms var(--ease);
 }
@@ -342,7 +341,6 @@
   max-width: 94vw;
   border-left: 1px solid var(--border);
   background: var(--bg-elevated);
-  backdrop-filter: blur(22px);
   transform: translateX(100%);
   transition: transform 280ms var(--ease);
 }

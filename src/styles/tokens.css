@@ -14,107 +14,108 @@
   color-scheme: dark;
 }
 
-/* Night: a dark chapel lit by one warm window. */
+/* Night: one flat warm black. The frame and the scene share it, so the window
+   reads as a single surface rather than a stack of tinted panels. */
 :root,
 [data-theme="night"] {
   color-scheme: dark;
 
-  --bg: #08090f;
-  --bg-elevated: rgba(16, 18, 29, 0.86);
-  --surface: rgba(255, 255, 255, 0.035);
-  --surface-strong: rgba(255, 255, 255, 0.075);
-  --border: rgba(255, 255, 255, 0.085);
-  --border-strong: rgba(255, 255, 255, 0.17);
+  --bg: #140f0b;
+  --bg-elevated: #1b1510;
+  --surface: rgba(255, 240, 224, 0.035);
+  --surface-strong: rgba(255, 240, 224, 0.075);
+  --border: rgba(255, 238, 220, 0.08);
+  --border-strong: rgba(255, 238, 220, 0.16);
 
-  --fg: #e9e7f1;
-  --fg-muted: #9c9ab0;
-  --fg-faint: #6f6d82;
+  --fg: #ece4d8;
+  --fg-muted: #a79a8d;
+  --fg-faint: #776b60;
   --accent: #d7b46a;
-  --accent-strong: #f0d18f;
+  --accent-strong: #efd191;
   --accent-contrast: #1a1408;
-  --danger: #e07070;
+  --danger: #dd7272;
   --warning: #d8a657;
-  --ok: #86b98a;
+  --ok: #8eb287;
 
-  --sky-top: #04050a;
-  --sky-bottom: #1a1b2d;
-  --glow: rgba(255, 178, 92, 0.48);
-  --glow-soft: rgba(255, 168, 92, 0.15);
+  --glow: rgba(255, 186, 110, 0.28);
+  --glow-soft: rgba(255, 176, 96, 0.1);
 
-  --cloud-far: #201f33;
-  --cloud-mid: #2b2b46;
-  --cloud-near: #3a3a58;
-  --cloud-base: #232338;
-  --cloud-lit: rgba(255, 190, 128, 0.3);
+  --cloud-far: #1a1411;
+  --cloud-mid: #221a15;
+  --cloud-near: #2e251d;
+  --cloud-base: #1e1713;
+  --cloud-lit: rgba(255, 186, 130, 0.18);
 
-  --robot-shell: #dfe3ee;
-  --robot-shell-edge: #8f97ad;
-  --robot-edge: rgba(255, 255, 255, 0.55);
-  --robot-joint: #6a7088;
-  --robot-visor: #101018;
-  --robot-eye: #ffd79a;
-  --robot-emblem: rgba(110, 120, 150, 0.5);
-  --robot-shadow: rgba(0, 0, 0, 0.28);
+  --robot-shell: #e6ddcf;
+  --robot-shell-edge: #8d8072;
+  --robot-edge: rgba(255, 248, 238, 0.5);
+  --robot-joint: #6b6055;
+  --robot-visor: #100c09;
+  --robot-eye: #ffcf92;
+  --robot-emblem: rgba(120, 106, 92, 0.45);
+  --robot-shadow: rgba(0, 0, 0, 0.3);
 
-  --bubble-bg: rgba(12, 13, 20, 0.84);
-  --bubble-border: rgba(255, 215, 154, 0.22);
-  --bubble-text: #efeaf6;
+  --bubble-bg: rgba(26, 20, 15, 0.96);
+  --bubble-border: rgba(240, 208, 150, 0.18);
+  --bubble-text: #efe6d9;
 
-  --error-bg: rgba(32, 15, 17, 0.86);
-  --error-border: rgba(224, 112, 112, 0.34);
+  --scrim: rgba(8, 5, 3, 0.45);
+
+  --error-bg: rgba(38, 18, 16, 0.92);
+  --error-border: rgba(221, 114, 114, 0.34);
   --error-title: #f0a5a5;
-  --error-text: #e6c8c8;
+  --error-text: #e8cbc6;
 }
 
-/* Dawn: the same chapel with the light coming from behind the clouds. */
+/* Dawn: the same chapel in warm paper instead of cool light. */
 [data-theme="dawn"] {
   color-scheme: light;
 
-  --bg: #eef1f6;
-  --bg-elevated: rgba(255, 255, 255, 0.9);
-  --surface: rgba(22, 30, 50, 0.035);
-  --surface-strong: rgba(22, 30, 50, 0.075);
-  --border: rgba(22, 30, 50, 0.1);
-  --border-strong: rgba(22, 30, 50, 0.2);
+  --bg: #f4efe6;
+  --bg-elevated: #fbf7f1;
+  --surface: rgba(52, 38, 24, 0.04);
+  --surface-strong: rgba(52, 38, 24, 0.08);
+  --border: rgba(52, 38, 24, 0.1);
+  --border-strong: rgba(52, 38, 24, 0.2);
 
-  --fg: #1b2130;
-  --fg-muted: #5a6377;
-  --fg-faint: #8a92a5;
-  --accent: #9a6b1f;
-  --accent-strong: #b8862b;
+  --fg: #241c14;
+  --fg-muted: #6a5d50;
+  --fg-faint: #93857a;
+  --accent: #96631c;
+  --accent-strong: #b1771f;
   --accent-contrast: #fffaf0;
-  --danger: #b0433f;
-  --warning: #a8741c;
-  --ok: #4f8a58;
+  --danger: #a8443c;
+  --warning: #9a6a1c;
+  --ok: #4f7f52;
 
-  --sky-top: #c8d5e8;
-  --sky-bottom: #f5e7d3;
-  --glow: rgba(255, 208, 142, 0.72);
-  --glow-soft: rgba(255, 214, 158, 0.26);
+  --glow: rgba(255, 196, 128, 0.45);
+  --glow-soft: rgba(255, 206, 150, 0.18);
 
-  --cloud-far: #d6deea;
-  --cloud-mid: #e9eef6;
-  --cloud-near: #fbfcff;
-  --cloud-base: #dde4ee;
-  --cloud-lit: rgba(255, 214, 160, 0.5);
+  --cloud-far: #e6ddd0;
+  --cloud-mid: #efe8dc;
+  --cloud-near: #faf5ec;
+  --cloud-base: #e2d8ca;
+  --cloud-lit: rgba(255, 206, 150, 0.45);
 
   --robot-shell: #ffffff;
-  --robot-shell-edge: #b9c1d2;
+  --robot-shell-edge: #c0b3a4;
   --robot-edge: rgba(255, 255, 255, 0.9);
-  --robot-joint: #98a1b4;
-  --robot-visor: #2b3143;
-  --robot-eye: #ffb454;
-  --robot-emblem: rgba(90, 100, 125, 0.32);
-  --robot-shadow: rgba(40, 50, 75, 0.16);
+  --robot-joint: #9c8f81;
+  --robot-visor: #2b241d;
+  --robot-eye: #e08a2a;
+  --robot-emblem: rgba(105, 92, 78, 0.3);
+  --robot-shadow: rgba(50, 38, 26, 0.15);
 
-  --bubble-bg: rgba(255, 255, 255, 0.94);
-  --bubble-border: rgba(22, 30, 50, 0.12);
-  --bubble-text: #232a3c;
+  --bubble-bg: rgba(255, 252, 246, 0.97);
+  --bubble-border: rgba(52, 38, 24, 0.12);
+  --bubble-text: #2a2119;
 
-  --error-bg: rgba(38, 22, 22, 0.9);
-  --error-border: rgba(176, 67, 63, 0.36);
-  --error-title: #f2b4b0;
-  --error-text: #e9d2cf;
+  --scrim: rgba(36, 24, 12, 0.22);
+
+  --error-bg: rgba(255, 244, 238, 0.97);
+  --error-border: rgba(168, 68, 60, 0.36);
+  --error-title: #8f342d;
+  --error-text: #6d3b36;
 }
 
 * {
@@ -271,7 +272,7 @@ button {
   position: absolute;
   inset: 0;
   z-index: 20;
-  background: rgba(3, 4, 8, 0.35);
+  background: var(--scrim);
   opacity: 0;
   pointer-events: none;
   transition: opacity 240ms var(--ease);

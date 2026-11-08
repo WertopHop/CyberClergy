@@ -1,10 +1,19 @@
-// The main screen: a cloud, a handful of praying clerics, and a prayer floating
-// above whoever is currently speaking. The cloud is a symmetric stack of blurred
-// SVG blobs, which keeps the composition even at any aspect ratio.
+// The main screen: the cloud platform, a handful of praying clerics standing on
+// it, and a prayer floating above whoever is currently speaking. Rows are
+// symmetric (three at the back, two per row after) so the composition stays
+// balanced whatever the number of clerics or the aspect ratio.
 import type { Translate } from "../i18n";
 import type { Dictionary } from "../i18n/locales/en";
 import type { Bubble } from "../hooks/useChapel";
-import type { ChapelStatus, ReligionProfile, Tempo, ThemeId } from "../lib/types";
+import type {
+  ChapelStatus,
+  ProviderId,
+  ProviderView,
+  ReligionProfile,
+  Tempo,
+  ThemeId,
+} from "../lib/types";
+import { CloudPlatform } from "./CloudPlatform";
 import { PrayerBubble } from "./PrayerBubble";
 import { Robot } from "./Robot";
 
@@ -13,6 +22,8 @@ interface ChapelProps {
   language: string;
   religion: ReligionProfile | null;
   clerics: number;
+  /** Configured providers; their looks are handed out to the clerics in order. */
+  providers: ProviderView[];
   bubbles: Record<number, Bubble>;
   activeIndex: number | null;
   status: ChapelStatus | null;
@@ -20,104 +31,22 @@ interface ChapelProps {
   onOpenSettings: () => void;
 }
 
-interface Puff {
-  cx: number;
-  cy: number;
-  r: number;
-}
-
-// Mirrored around x = 600: three strata plus a base, so the mound reads as one
-// soft bank rather than scattered dots.
-const FAR: Puff[] = [
-  { cx: 300, cy: 362, r: 132 },
-  { cx: 600, cy: 332, r: 158 },
-  { cx: 900, cy: 362, r: 132 },
-];
-
-const MID: Puff[] = [
-  { cx: 180, cy: 470, r: 150 },
-  { cx: 400, cy: 432, r: 170 },
-  { cx: 600, cy: 414, r: 176 },
-  { cx: 800, cy: 432, r: 170 },
-  { cx: 1020, cy: 470, r: 150 },
-];
-
-const NEAR: Puff[] = [
-  { cx: 150, cy: 620, r: 160 },
-  { cx: 380, cy: 582, r: 190 },
-  { cx: 600, cy: 566, r: 200 },
-  { cx: 820, cy: 582, r: 190 },
-  { cx: 1050, cy: 620, r: 160 },
-];
-
-const BASE: Puff[] = [
-  { cx: 300, cy: 702, r: 170 },
-  { cx: 600, cy: 692, r: 200 },
-  { cx: 900, cy: 702, r: 170 },
-];
-
-function CloudBackdrop() {
-  return (
-    <div className="clouds" aria-hidden="true">
-      <div className="clouds__sky" />
-      <svg
-        className="clouds__art"
-        viewBox="0 0 1200 800"
-        preserveAspectRatio="xMidYMid slice"
-      >
-        <defs>
-          <filter id="cloud-veil" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="52" />
-          </filter>
-          <filter id="cloud-soft" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="30" />
-          </filter>
-        </defs>
-
-        <g filter="url(#cloud-veil)" className="clouds__layer clouds__layer--far">
-          {FAR.map((puff) => (
-            <circle key={`${puff.cx}-${puff.cy}`} cx={puff.cx} cy={puff.cy} r={puff.r} />
-          ))}
-        </g>
-
-        <g filter="url(#cloud-soft)" className="clouds__layer clouds__layer--mid">
-          {MID.map((puff) => (
-            <circle key={`${puff.cx}-${puff.cy}`} cx={puff.cx} cy={puff.cy} r={puff.r} />
-          ))}
-        </g>
-
-        <g filter="url(#cloud-soft)" className="clouds__layer clouds__layer--near">
-          {NEAR.map((puff) => (
-            <circle key={`${puff.cx}-${puff.cy}`} cx={puff.cx} cy={puff.cy} r={puff.r} />
-          ))}
-        </g>
-
-        <g filter="url(#cloud-soft)" className="clouds__layer clouds__layer--base">
-          {BASE.map((puff) => (
-            <circle key={`${puff.cx}-${puff.cy}`} cx={puff.cx} cy={puff.cy} r={puff.r} />
-          ))}
-        </g>
-
-        <g filter="url(#cloud-veil)" className="clouds__layer clouds__layer--lit">
-          <ellipse cx="830" cy="360" rx="210" ry="120" />
-          <ellipse cx="560" cy="430" rx="150" ry="80" />
-        </g>
-      </svg>
-    </div>
-  );
-}
-
-/** Splits the clerics into symmetric rows: three at the back, two per row after. */
+/** Splits the clerics into symmetric rows of three, one platform tier each. */
 function layoutRows(clerics: number): number[] {
   const rows: number[] = [];
   let remaining = Math.max(clerics, 1);
   while (remaining > 0) {
-    const size = Math.min(remaining, rows.length === 0 ? 3 : 2);
+    const size = Math.min(remaining, 3);
     rows.push(size);
     remaining -= size;
   }
   return rows;
 }
+
+/** Height of the front tier in the scene, in percent from the bottom. */
+const ROW_BASE = 35;
+/** How much higher every row behind the front one stands. Matches the tiers. */
+const ROW_STEP = 10;
 
 const THEME_KEYS: Record<ThemeId, keyof Dictionary> = {
   guilt: "themeGuilt",
@@ -205,6 +134,7 @@ export function Chapel({
   language,
   religion,
   clerics,
+  providers,
   bubbles,
   activeIndex,
   status,
@@ -218,11 +148,19 @@ export function Chapel({
       religion.id
     : "";
 
+  // Until the roster binds each cleric to a network, the looks go round the
+  // configured providers, which still shows every house on the cloud.
+  const deck = providers
+    .filter((provider) => provider.configured)
+    .map((provider) => provider.id);
+  const lookAt = (index: number): ProviderId | undefined =>
+    deck.length > 0 ? deck[index % deck.length] : undefined;
+
   let robotIndex = 0;
 
   return (
     <main className="chapel">
-      <CloudBackdrop />
+      <CloudPlatform rows={rows.length} />
 
       <header className="chapel__caption">
         <h1 className="chapel__tradition">{traditionName}</h1>
@@ -233,7 +171,14 @@ export function Chapel({
 
       <div className="chapel__stacks">
         {rows.map((size, rowIndex) => (
-          <div className="chapel__row" key={`row-${rowIndex}`}>
+          <div
+            className="chapel__row"
+            key={`row-${rowIndex}`}
+            style={{
+              bottom: `${ROW_BASE + (rows.length - 1 - rowIndex) * ROW_STEP}%`,
+              zIndex: 2 + rowIndex,
+            }}
+          >
             {Array.from({ length: size }, () => {
               const index = robotIndex;
               robotIndex += 1;
@@ -244,7 +189,6 @@ export function Chapel({
                     activeIndex === index ? "is-praying" : ""
                   }`}
                   key={`cleric-${index}`}
-                  style={{ zIndex: rowIndex + 2 }}
                 >
                   <div className="chapel__bubble-slot">
                     {bubble ? (
@@ -259,7 +203,8 @@ export function Chapel({
                   <Robot
                     praying={activeIndex === index}
                     seed={index + 1}
-                    scale={0.94 + rowIndex * 0.12}
+                    scale={0.86 + rowIndex * 0.11}
+                    variant={lookAt(index)}
                   />
                 </div>
               );

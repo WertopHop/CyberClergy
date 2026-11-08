@@ -118,6 +118,7 @@ export default function App() {
           language={preferences.language}
           religion={religion}
           clerics={preferences.clerics}
+          providers={providers}
           bubbles={chapel.bubbles}
           activeIndex={chapel.activeIndex}
           status={chapel.status}

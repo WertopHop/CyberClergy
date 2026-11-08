@@ -99,11 +99,6 @@ export function TitleBar({ t, sidebarOpen, onToggleSidebar }: TitleBarProps) {
         </button>
       </div>
 
-      <div className="titlebar__title">
-        <span className="titlebar__mark" aria-hidden="true" />
-        <span>{t("appName")}</span>
-      </div>
-
       <div className="titlebar__side titlebar__side--end">
         <button
           type="button"

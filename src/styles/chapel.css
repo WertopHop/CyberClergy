@@ -1,4 +1,4 @@
-/* The chapel: a flat warm backdrop, a symmetric cloud mound, praying clerics and
+/* The chapel: a flat warm backdrop, the cloud platform the clerics stand on and
    the prayer that floats above whoever is speaking. */
 
 .chapel {
@@ -9,47 +9,74 @@
   min-width: 0;
   height: 100%;
   overflow: hidden;
-}
-
-/* ---------------------------------------------------------------- clouds */
-
-.clouds {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-
-.clouds__sky {
-  position: absolute;
-  inset: 0;
   background: var(--bg);
 }
 
-.clouds__art {
+/* -------------------------------------------------------------- platform */
+
+/* A full-scene layer: the tier positions are percentages of the scene height, so
+   the standing rows and the slabs stay in line at any window size. */
+.platform {
   position: absolute;
-  inset: -5%;
-  width: 110%;
-  height: 110%;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
 }
 
-.clouds__layer--far {
-  fill: var(--cloud-far);
+/* Stretched to the scene instead of contained, which keeps the slab lines at the
+   same fraction of the height and width as the rows. */
+.platform__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 -14px 36px var(--platform-shadow));
 }
 
-.clouds__layer--mid {
-  fill: var(--cloud-mid);
+.platform__breathe {
+  animation: platform-breathe 26s ease-in-out infinite;
+  transform-box: view-box;
+  transform-origin: 50% 100%;
 }
 
-.clouds__layer--near {
-  fill: var(--cloud-near);
+.platform__body {
+  fill: var(--platform-body);
 }
 
-.clouds__layer--base {
-  fill: var(--cloud-base);
+.platform__lobe {
+  fill: var(--platform-lobe);
 }
 
-.clouds__layer--lit {
-  fill: var(--cloud-lit);
+.platform__slab {
+  fill: var(--platform-slab);
+}
+
+.platform__slab--back {
+  fill: var(--platform-slab-back);
+}
+
+.platform__line {
+  fill: var(--platform-edge);
+}
+
+.platform__line--back {
+  opacity: 0.45;
+}
+
+.platform__sheen {
+  fill: var(--robot-shell);
+  opacity: 0.05;
+}
+
+/* Only a vertical breath from the bottom edge: the layer is full-bleed, so any
+   translation would open a gap at the bottom of the window. */
+@keyframes platform-breathe {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.006);
+  }
 }
 
 /* --------------------------------------------------------------- caption */
@@ -131,23 +158,23 @@
 /* ---------------------------------------------------------------- clerics */
 
 .chapel__stacks {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 4;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(4px, 1.6vh, 22px);
-  min-height: 0;
-  padding: 6px 24px 32px;
+  pointer-events: none;
 }
 
+/* Rows are placed by their feet: `bottom` comes from the tier geometry, so the
+   front row stands on the front slab and every row behind it on its own tier. */
 .chapel__row {
+  position: absolute;
+  right: 0;
+  left: 0;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   gap: clamp(8px, 4vw, 68px);
+  pointer-events: auto;
 }
 
 .chapel__cell {
@@ -224,7 +251,9 @@
 /* ----------------------------------------------------------------- robot */
 
 .robot {
-  width: calc(clamp(64px, 11.5vh, 122px) * var(--robot-scale, 1));
+  /* Overridden per provider in Robot.tsx; every accent detail reads from here. */
+  --robot-accent: var(--accent);
+  width: calc(clamp(56px, 10.5vh, 106px) * var(--robot-scale, 1));
   flex: none;
 }
 
@@ -241,6 +270,10 @@
   transform-origin: 50% 100%;
 }
 
+.robot__shadow {
+  fill: var(--robot-shadow);
+}
+
 .robot__shell {
   fill: var(--robot-shell);
   stroke: var(--robot-shell-edge);
@@ -251,52 +284,164 @@
   fill: none;
   stroke: var(--robot-edge);
   stroke-width: 1.1;
-  opacity: 0.75;
+  opacity: 0.6;
+}
+
+.robot__head {
+  fill: var(--robot-shell);
+  stroke: var(--robot-shell-edge);
+  stroke-width: 1.4;
+}
+
+.robot__head-edge {
+  fill: none;
+  stroke: var(--robot-edge);
+  stroke-width: 1.2;
+  opacity: 0.6;
 }
 
 .robot__joint {
   fill: var(--robot-joint);
 }
 
+.robot__shoulder,
+.robot__foot {
+  fill: var(--robot-shell);
+  stroke: var(--robot-shell-edge);
+  stroke-width: 1.2;
+}
+
 .robot__visor {
   fill: var(--robot-visor);
+}
+
+.robot__visor-rim {
+  fill: none;
+  stroke: var(--robot-accent);
+  stroke-width: 1.3;
+  opacity: 0.7;
 }
 
 .robot__eye {
   fill: var(--robot-eye);
 }
 
+/* Blinking is a squash of the eye pair, cheap and convincing at this size. */
+.robot__eyes {
+  animation: robot-blink 7.2s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
 .robot__wire {
+  fill: none;
   stroke: var(--robot-joint);
-  stroke-width: 1.6;
+  stroke-width: 1.7;
   stroke-linecap: round;
 }
 
 .robot__tip {
-  fill: var(--robot-eye);
-  animation: tip-pulse 3.4s ease-in-out infinite;
+  fill: var(--robot-accent);
+  animation: tip-pulse 3.6s ease-in-out infinite;
 }
 
-.robot__emblem {
+.robot__hatch {
+  fill: var(--robot-hatch);
+  stroke: var(--robot-emblem);
+  stroke-width: 1;
+}
+
+.robot__hatch-rim {
   fill: none;
-  stroke: var(--robot-emblem);
-  stroke-width: 1.4;
+  stroke: var(--robot-accent);
+  stroke-width: 1.1;
+  opacity: 0.55;
 }
 
-.robot__emblem-mark {
-  stroke: var(--robot-emblem);
+.robot__glyph {
+  fill: none;
+  stroke: var(--robot-accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.robot__cloak {
+  fill: var(--robot-accent);
+  fill-opacity: 0.16;
+  stroke: var(--robot-accent);
+  stroke-width: 1.2;
+  stroke-opacity: 0.45;
+}
+
+.robot__stole,
+.robot__collar,
+.robot__hand {
+  fill: var(--robot-accent);
+}
+
+.robot__crest {
+  fill: var(--robot-accent);
+  opacity: 0.9;
+}
+
+.robot__hood {
+  fill: var(--robot-accent);
+  fill-opacity: 0.18;
+  stroke: var(--robot-accent);
+  stroke-width: 1.6;
+  opacity: 0.9;
+}
+
+.robot__wings path {
+  fill: var(--robot-shell);
+  stroke: var(--robot-accent);
   stroke-width: 1.4;
+  opacity: 0.92;
+}
+
+.robot__halo {
+  fill: none;
+  stroke: var(--robot-accent);
+  stroke-width: 2;
+  animation: tip-pulse 4.2s ease-in-out infinite;
+}
+
+.robot__headset path {
+  fill: none;
+  stroke: var(--robot-accent);
+  stroke-width: 1.8;
   stroke-linecap: round;
 }
 
-.robot__shadow {
-  fill: var(--robot-shadow);
+.robot__headset rect {
+  fill: var(--robot-accent);
+  fill-opacity: 0.3;
+  stroke: var(--robot-accent);
+  stroke-width: 1.6;
+}
+
+.robot__headset circle {
+  fill: var(--robot-accent);
+}
+
+.robot__scarf rect {
+  fill: var(--robot-accent);
+  opacity: 0.9;
+}
+
+.robot__scarf path {
+  fill: none;
+  stroke: var(--robot-accent);
+  stroke-width: 6;
+  stroke-linecap: round;
+  opacity: 0.85;
 }
 
 .robot__arm {
   animation: arm-sway 6.4s ease-in-out infinite;
   transform-box: fill-box;
-  transform-origin: 50% 100%;
+  transform-origin: 50% 30%;
 }
 
 .robot--praying {
@@ -311,8 +456,16 @@
   animation-duration: 3.2s;
 }
 
+.robot--praying .robot__eyes {
+  animation-duration: 4.6s;
+}
+
 .robot--praying .robot__eye {
-  animation: eye-glow 2.8s ease-in-out infinite;
+  filter: drop-shadow(0 0 3px var(--robot-eye));
+}
+
+.robot--praying .robot__visor-rim {
+  opacity: 1;
 }
 
 @keyframes robot-bob {
@@ -331,17 +484,18 @@
     transform: rotate(-1.6deg);
   }
   50% {
-    transform: rotate(2.6deg);
+    transform: rotate(2.4deg);
   }
 }
 
-@keyframes eye-glow {
+@keyframes robot-blink {
   0%,
+  92%,
   100% {
-    opacity: 0.82;
+    transform: scaleY(1);
   }
-  50% {
-    opacity: 1;
+  95% {
+    transform: scaleY(0.12);
   }
 }
 
@@ -352,6 +506,19 @@
   }
   50% {
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform__breathe,
+  .robot__bob,
+  .robot__arm,
+  .robot__eyes,
+  .robot__tip,
+  .robot__halo,
+  .status-chip__dot,
+  .bubble {
+    animation: none;
   }
 }
 

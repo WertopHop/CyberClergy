@@ -40,11 +40,13 @@
   --glow: rgba(255, 186, 110, 0.28);
   --glow-soft: rgba(255, 176, 96, 0.1);
 
-  --cloud-far: #1a1411;
-  --cloud-mid: #221a15;
-  --cloud-near: #2e251d;
-  --cloud-base: #1e1713;
-  --cloud-lit: rgba(255, 186, 130, 0.18);
+  /* The cloud platform the clerics stand on: one body under a flat slab. */
+  --platform-slab: #302720;
+  --platform-slab-back: #241d17;
+  --platform-body: #221b15;
+  --platform-lobe: #1a1410;
+  --platform-edge: rgba(255, 198, 142, 0.24);
+  --platform-shadow: rgba(0, 0, 0, 0.42);
 
   --robot-shell: #e6ddcf;
   --robot-shell-edge: #8d8072;
@@ -52,6 +54,7 @@
   --robot-joint: #6b6055;
   --robot-visor: #100c09;
   --robot-eye: #ffcf92;
+  --robot-hatch: rgba(255, 248, 238, 0.07);
   --robot-emblem: rgba(120, 106, 92, 0.45);
   --robot-shadow: rgba(0, 0, 0, 0.3);
 
@@ -91,11 +94,12 @@
   --glow: rgba(255, 196, 128, 0.45);
   --glow-soft: rgba(255, 206, 150, 0.18);
 
-  --cloud-far: #e6ddd0;
-  --cloud-mid: #efe8dc;
-  --cloud-near: #faf5ec;
-  --cloud-base: #e2d8ca;
-  --cloud-lit: rgba(255, 206, 150, 0.45);
+  --platform-slab: #fdf9f3;
+  --platform-slab-back: #f3ece1;
+  --platform-body: #f7f1e8;
+  --platform-lobe: #ebe1d3;
+  --platform-edge: rgba(255, 255, 255, 0.95);
+  --platform-shadow: rgba(120, 96, 70, 0.18);
 
   --robot-shell: #ffffff;
   --robot-shell-edge: #c0b3a4;
@@ -103,6 +107,7 @@
   --robot-joint: #9c8f81;
   --robot-visor: #2b241d;
   --robot-eye: #e08a2a;
+  --robot-hatch: rgba(52, 38, 24, 0.07);
   --robot-emblem: rgba(105, 92, 78, 0.3);
   --robot-shadow: rgba(50, 38, 26, 0.15);
 

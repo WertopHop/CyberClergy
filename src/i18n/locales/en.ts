@@ -45,6 +45,7 @@ export const en = {
   chapelQuietHint: "The clergy pray the tradition's own canon until a network answers.",
   chapelQuiet: "quiet prayer",
   chapelPending: "{count} in intercession",
+  chapelBuffered: "{count} prepared",
   chapelBudget: "quota {done}/{limit}",
   chapelCooldown: "pause {secs}s",
 
@@ -102,6 +103,7 @@ export const en = {
   statsTotal: "prayers in total",
   statsTokens: "tokens",
   statsLatency: "average response",
+  statsBatch: "{prayers} prayers in {requests} requests",
   statsFailures: "failed calls",
   statsEmpty: "The journal is still empty.",
   statsProviderQuiet: "quiet canon",

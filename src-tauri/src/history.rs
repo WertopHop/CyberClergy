@@ -23,7 +23,8 @@ pub const HISTORY_FILE: &str = "history.sqlite";
 pub const MAX_ROWS: i64 = 5000;
 /// How often the insert path prunes, so it is not a delete per prayer.
 const PRUNE_EVERY: u32 = 50;
-const SCHEMA_VERSION: i64 = 1;
+/// Bumped when a column is added; version 1 predates batched prayers.
+const SCHEMA_VERSION: i64 = 2;
 
 /// Where a prayer came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -73,6 +74,9 @@ pub struct PrayerRecord {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub elapsed_ms: u64,
+    /// Prayers this network call yielded. Zero means the row cost no request:
+    /// a buffered prayer replayed from a batch paid for earlier.
+    pub prayers_per_request: u32,
     pub ok: bool,
     pub error: Option<String>,
 }
@@ -102,6 +106,7 @@ impl PrayerRecord {
             prompt_tokens: 0,
             completion_tokens: 0,
             elapsed_ms,
+            prayers_per_request: 0,
             ok: false,
             error: Some(error),
         }
@@ -121,6 +126,9 @@ pub struct ProviderShare {
 pub struct PrayerStats {
     pub total: u64,
     pub today: u64,
+    /// Network calls that produced at least one prayer. Compared with `total`
+    /// it shows how much batching saves.
+    pub requests: u64,
     pub failures: u64,
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
@@ -182,8 +190,9 @@ impl History {
                 "INSERT INTO prayers (
                     created_at, religion, provider, model, cleric, source,
                     intercession_id, theme, ordinal, target, text,
-                    prompt_tokens, completion_tokens, elapsed_ms, ok, error
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                    prompt_tokens, completion_tokens, elapsed_ms,
+                    prayers_per_request, ok, error
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                 params![
                     record.created_at,
                     record.religion,
@@ -199,6 +208,7 @@ impl History {
                     i64::from(record.prompt_tokens),
                     i64::from(record.completion_tokens),
                     record.elapsed_ms as i64,
+                    i64::from(record.prayers_per_request),
                     i64::from(record.ok),
                     record.error,
                 ],
@@ -220,7 +230,8 @@ impl History {
             .lock()
             .map_err(|_| "the prayer journal is unavailable".to_string())?;
 
-        let (total, prompt_tokens, completion_tokens, average_ms, failures): (
+        let (total, prompt_tokens, completion_tokens, average_ms, requests, failures): (
+            i64,
             i64,
             i64,
             i64,
@@ -233,6 +244,7 @@ impl History {
                         COALESCE(SUM(prompt_tokens), 0),
                         COALESCE(SUM(completion_tokens), 0),
                         CAST(ROUND(COALESCE(AVG(elapsed_ms), 0)) AS INTEGER),
+                        COALESCE(SUM(CASE WHEN prayers_per_request > 0 THEN 1 ELSE 0 END), 0),
                         COALESCE(SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END), 0)
                  FROM prayers",
                 [],
@@ -243,6 +255,7 @@ impl History {
                         row.get(2)?,
                         row.get(3)?,
                         row.get(4)?,
+                        row.get(5)?,
                     ))
                 },
             )
@@ -284,6 +297,7 @@ impl History {
         Ok(PrayerStats {
             total: total.max(0) as u64,
             today: today.max(0) as u64,
+            requests: requests.max(0) as u64,
             failures: failures.max(0) as u64,
             prompt_tokens: prompt_tokens.max(0) as u64,
             completion_tokens: completion_tokens.max(0) as u64,
@@ -303,7 +317,8 @@ impl History {
             .prepare(
                 "SELECT created_at, religion, provider, model, cleric, source,
                         intercession_id, theme, ordinal, target, text,
-                        prompt_tokens, completion_tokens, elapsed_ms, ok, error
+                        prompt_tokens, completion_tokens, elapsed_ms,
+                        prayers_per_request, ok, error
                  FROM prayers
                  ORDER BY id DESC
                  LIMIT ?1",
@@ -328,8 +343,9 @@ impl History {
                     prompt_tokens: row.get::<_, i64>(11)?.max(0) as u32,
                     completion_tokens: row.get::<_, i64>(12)?.max(0) as u32,
                     elapsed_ms: row.get::<_, i64>(13)?.max(0) as u64,
-                    ok: row.get::<_, i64>(14)? != 0,
-                    error: row.get(15)?,
+                    prayers_per_request: row.get::<_, i64>(14)?.max(0) as u32,
+                    ok: row.get::<_, i64>(15)? != 0,
+                    error: row.get(16)?,
                 })
             })
             .map_err(|error| format!("cannot read the journal: {error}"))?
@@ -357,6 +373,7 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             prompt_tokens INTEGER NOT NULL DEFAULT 0,
             completion_tokens INTEGER NOT NULL DEFAULT 0,
             elapsed_ms INTEGER NOT NULL DEFAULT 0,
+            prayers_per_request INTEGER NOT NULL DEFAULT 0,
             ok INTEGER NOT NULL,
             error TEXT
         );
@@ -364,6 +381,16 @@ fn migrate(conn: &Connection) -> Result<(), String> {
         CREATE INDEX IF NOT EXISTS prayers_provider ON prayers(provider);",
     )
     .map_err(|error| format!("cannot prepare the journal: {error}"))?;
+
+    // A journal written before batching lacks the column; those rows simply did
+    // not batch, so zero is the truthful value for them.
+    if !has_column(conn, "prayers_per_request")? {
+        conn.execute(
+            "ALTER TABLE prayers ADD COLUMN prayers_per_request INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .map_err(|error| format!("cannot upgrade the journal: {error}"))?;
+    }
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -373,6 +400,27 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             .map_err(|error| format!("cannot set the journal version: {error}"))?;
     }
     Ok(())
+}
+
+fn has_column(conn: &Connection, column: &str) -> Result<bool, String> {
+    let mut statement = conn
+        .prepare("PRAGMA table_info(prayers)")
+        .map_err(|error| format!("cannot inspect the journal: {error}"))?;
+    let mut rows = statement
+        .query([])
+        .map_err(|error| format!("cannot inspect the journal: {error}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| format!("cannot inspect the journal: {error}"))?
+    {
+        let name: String = row
+            .get(1)
+            .map_err(|error| format!("cannot inspect the journal: {error}"))?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn prune(conn: &Connection, keep: i64) -> Result<(), String> {
@@ -417,6 +465,7 @@ mod tests {
             prompt_tokens: tokens,
             completion_tokens: tokens,
             elapsed_ms: 700,
+            prayers_per_request: 3,
             ok: true,
             error: None,
         }
@@ -462,6 +511,7 @@ mod tests {
         let stats = history.stats(1_500).expect("statistics are readable");
         assert_eq!(stats.total, 3);
         assert_eq!(stats.today, 1, "only successes after the day boundary");
+        assert_eq!(stats.requests, 2, "two calls produced the three prayers");
         assert_eq!(stats.failures, 1);
         assert_eq!(stats.prompt_tokens, 15);
         assert_eq!(stats.completion_tokens, 15);
@@ -508,5 +558,51 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM prayers", [], |row| row.get(0))
             .expect("count is readable");
         assert_eq!(remaining, 2);
+    }
+
+    #[test]
+    fn a_draft_era_journal_gains_the_batch_column() {
+        let conn = Connection::open_in_memory().expect("connection opens");
+        conn.execute_batch(
+            "CREATE TABLE prayers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at INTEGER NOT NULL,
+                religion TEXT NOT NULL,
+                provider TEXT,
+                model TEXT,
+                cleric INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                intercession_id TEXT,
+                theme TEXT,
+                ordinal INTEGER,
+                target INTEGER,
+                text TEXT,
+                prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                elapsed_ms INTEGER NOT NULL DEFAULT 0,
+                ok INTEGER NOT NULL,
+                error TEXT
+             );
+             PRAGMA user_version = 1;",
+        )
+        .expect("the older schema is created");
+        conn.execute(
+            "INSERT INTO prayers (created_at, religion, cleric, source, ok)
+             VALUES (1, 'islam', 0, 'quiet', 1)",
+            [],
+        )
+        .expect("an older prayer is written");
+
+        migrate(&conn).expect("the journal upgrades in place");
+
+        let prayers_per_request: i64 = conn
+            .query_row("SELECT prayers_per_request FROM prayers", [], |row| {
+                row.get(0)
+            })
+            .expect("the older row survives the upgrade");
+        assert_eq!(
+            prayers_per_request, 0,
+            "prayers from before batching did not batch"
+        );
     }
 }

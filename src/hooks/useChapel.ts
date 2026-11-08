@@ -2,8 +2,13 @@
 //
 // The Rust loop decides which cleric prays and when; this hook only collects the
 // `chapel://prayer` events into bubbles, tracks who is currently speaking and
-// keeps the latest status. Bubbles expire on their own, length-aware, so a long
-// prayer is not cut off and a short one does not linger.
+// keeps the latest status.
+//
+// A prayer arrives as finished text, but it is revealed as if it were being
+// written: a batch of three would otherwise flash three paragraphs at once. The
+// typing pace, the blinking cursor and the queue for prayers that arrive while
+// the previous one is still being typed all live here, so the components stay
+// presentational.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getStatus, onPrayer, onStatus } from "../lib/bridge";
@@ -14,18 +19,24 @@ import type {
   ThemeId,
 } from "../lib/types";
 
+/** Characters revealed per tick; ~70 per second reads like a patient hand. */
+const CHARS_PER_TICK = 2;
+const TICK_MS = 30;
 /** A bubble lives longer when there is more to read, within reason. */
 const MIN_TTL_MS = 14_000;
 const TTL_PER_CHAR_MS = 45;
-const MAX_TTL_MS = 48_000;
+const MAX_TTL_MS = 60_000;
 /** How long a cleric keeps the praying pose after speaking. */
 const ACTIVE_MS = 8_000;
-const PRUNE_MS = 1_500;
 
 export interface Bubble {
   text: string;
+  /** Characters revealed so far; equals `text.length` once fully typed. */
+  shown: number;
   /** Unix timestamp in milliseconds, used as the animation key. */
   at: number;
+  /** Moment the bubble leaves the screen. */
+  expires: number;
   source: PrayerSource;
   provider: string | null;
   model: string | null;
@@ -43,17 +54,21 @@ export interface ChapelState {
   reload: () => void;
 }
 
-function bubbleTtl(bubble: Bubble): number {
-  return Math.min(
-    MAX_TTL_MS,
-    MIN_TTL_MS + bubble.text.length * TTL_PER_CHAR_MS,
-  );
+function typingDuration(text: string): number {
+  return Math.ceil(text.length / CHARS_PER_TICK) * TICK_MS;
 }
 
-function toBubble(event: PrayerEvent): Bubble {
+function bubbleTtl(text: string): number {
+  return Math.min(MAX_TTL_MS, MIN_TTL_MS + text.length * TTL_PER_CHAR_MS);
+}
+
+/** Created when typing starts, so the bubble lives through its own typing. */
+function toBubble(event: PrayerEvent, now: number): Bubble {
   return {
     text: event.text,
-    at: event.at,
+    shown: 0,
+    at: now,
+    expires: now + typingDuration(event.text) + bubbleTtl(event.text),
     source: event.source,
     provider: event.provider,
     model: event.model,
@@ -63,17 +78,50 @@ function toBubble(event: PrayerEvent): Bubble {
   };
 }
 
+/** Takes the next prayer waiting for a slot, if there is one. */
+function shiftQueued(
+  queued: { current: Record<number, PrayerEvent[]> },
+  index: number,
+): PrayerEvent | null {
+  const pending = queued.current[index];
+  if (!pending || pending.length === 0) {
+    return null;
+  }
+  const event = pending.shift() ?? null;
+  if (pending.length === 0) {
+    delete queued.current[index];
+  }
+  return event;
+}
+
 export function useChapel({ enabled }: { enabled: boolean }): ChapelState {
   const [bubbles, setBubbles] = useState<Record<number, Bubble>>({});
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [status, setStatus] = useState<ChapelStatus | null>(null);
   const [ready, setReady] = useState(false);
   const activeTimer = useRef<number | null>(null);
+  /** Prayers that arrived while the same cleric was still typing. */
+  const queued = useRef<Record<number, PrayerEvent[]>>({});
+  /** Keeps the tick from doing any work on an empty chapel. */
+  const lively = useRef(false);
+
+  const touchActive = useCallback((cleric: number) => {
+    setActiveIndex(cleric);
+    if (activeTimer.current !== null) {
+      window.clearTimeout(activeTimer.current);
+    }
+    activeTimer.current = window.setTimeout(() => {
+      setActiveIndex(null);
+      activeTimer.current = null;
+    }, ACTIVE_MS);
+  }, []);
 
   useEffect(() => {
     if (!enabled) {
       setBubbles({});
       setActiveIndex(null);
+      queued.current = {};
+      lively.current = false;
       return;
     }
 
@@ -84,18 +132,21 @@ export function useChapel({ enabled }: { enabled: boolean }): ChapelState {
       if (cancelled) {
         return;
       }
-      setBubbles((current) => ({
-        ...current,
-        [event.cleric]: toBubble(event),
-      }));
-      setActiveIndex(event.cleric);
-      if (activeTimer.current !== null) {
-        window.clearTimeout(activeTimer.current);
-      }
-      activeTimer.current = window.setTimeout(() => {
-        setActiveIndex(null);
-        activeTimer.current = null;
-      }, ACTIVE_MS);
+      // The robot lights up the moment the words arrive, even while the
+      // previous prayer is still being typed.
+      touchActive(event.cleric);
+
+      setBubbles((current) => {
+        const existing = current[event.cleric];
+        if (existing && existing.shown < existing.text.length) {
+          const pending = queued.current[event.cleric] ?? [];
+          pending.push(event);
+          queued.current[event.cleric] = pending;
+          return current;
+        }
+        lively.current = true;
+        return { ...current, [event.cleric]: toBubble(event, Date.now()) };
+      });
     }).then((stop) => {
       if (cancelled) {
         stop();
@@ -135,24 +186,51 @@ export function useChapel({ enabled }: { enabled: boolean }): ChapelState {
         activeTimer.current = null;
       }
     };
-  }, [enabled]);
+  }, [enabled, touchActive]);
 
+  // One tick drives everything time-based: reveal, expiry and the queue.
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (!lively.current) {
+        return;
+      }
       const now = Date.now();
       setBubbles((current) => {
         let changed = false;
         const next: Record<number, Bubble> = {};
         for (const [key, bubble] of Object.entries(current)) {
-          if (now - bubble.at < bubbleTtl(bubble)) {
-            next[Number(key)] = bubble;
-          } else {
+          const index = Number(key);
+          if (now >= bubble.expires) {
             changed = true;
+            const waiting = shiftQueued(queued, index);
+            if (waiting) {
+              next[index] = toBubble(waiting, now);
+            }
+            continue;
           }
+          if (bubble.shown < bubble.text.length) {
+            changed = true;
+            next[index] = {
+              ...bubble,
+              shown: Math.min(bubble.text.length, bubble.shown + CHARS_PER_TICK),
+            };
+            continue;
+          }
+          const waiting = shiftQueued(queued, index);
+          if (waiting) {
+            changed = true;
+            next[index] = toBubble(waiting, now);
+            continue;
+          }
+          next[index] = bubble;
         }
-        return changed ? next : current;
+        if (!changed) {
+          return current;
+        }
+        lively.current = Object.keys(next).length > 0;
+        return next;
       });
-    }, PRUNE_MS);
+    }, TICK_MS);
     return () => window.clearInterval(timer);
   }, []);
 

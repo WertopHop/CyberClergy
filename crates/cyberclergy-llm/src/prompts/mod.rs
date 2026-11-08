@@ -14,6 +14,7 @@ pub const SYSTEM_PROMPT_TEMPLATE: &str =
     include_str!("../../resources/prompts/system_prompt.md");
 
 pub const KEY_TRADITION: &str = "tradition";
+pub const KEY_BATCH: &str = "batch";
 pub const KEY_LANGUAGE: &str = "language";
 pub const KEY_TONE: &str = "tone";
 pub const KEY_PRAYER_LENGTH: &str = "prayer_length";
@@ -25,7 +26,11 @@ pub const DEFAULT_TRADITION: &str =
     "an unspecified spiritual tradition, addressing the divine in inclusive and respectful terms";
 pub const DEFAULT_LANGUAGE: &str = "English";
 pub const DEFAULT_TONE: &str = "reverent and warm";
-pub const DEFAULT_PRAYER_LENGTH: &str = "a single short paragraph of roughly 60 to 110 words";
+pub const DEFAULT_PRAYER_LENGTH: &str = "one or two short paragraphs of roughly 120 to 200 words";
+/// Prayers per response when the caller says nothing. One, because a caller that
+/// does not know about batches (the `pray` binary, tests) must get one prayer;
+/// the scheduler asks for the profile's batch explicitly.
+pub const DEFAULT_BATCH: u32 = 1;
 pub const DEFAULT_INTENT: &str = "general wellbeing, protection and peace";
 pub const DEFAULT_USER_NAME: &str = "the person you serve";
 pub const DEFAULT_TRADITION_NOTES: &str =
@@ -181,6 +186,10 @@ pub struct PrayerSpec {
     /// Free-form notes injected into the `Tradition-specific notes` section.
     /// Religion profiles use this for their addendum.
     pub tradition_notes: Option<String>,
+    /// Prayers the response should contain, separated by the `---` line. Free
+    /// tiers bill per request, so one call answering several prayers is the
+    /// cheapest way to pray more often.
+    pub batch: Option<u32>,
 }
 
 impl PrayerSpec {
@@ -223,6 +232,19 @@ impl PrayerSpec {
         self
     }
 
+    pub fn with_batch(mut self, batch: u32) -> Self {
+        self.batch = Some(batch.clamp(1, crate::batch::MAX_BATCH));
+        self
+    }
+
+    /// Prayers this request should yield, clamped to what the prompt contract
+    /// allows.
+    pub fn batch(&self) -> u32 {
+        self.batch
+            .unwrap_or(DEFAULT_BATCH)
+            .clamp(1, crate::batch::MAX_BATCH)
+    }
+
     /// Builds the complete placeholder context, applying defaults for anything
     /// the caller left out or left blank.
     pub fn context(&self) -> PromptContext {
@@ -253,6 +275,7 @@ impl PrayerSpec {
                 normalized(&self.tradition_notes)
                     .unwrap_or_else(|| DEFAULT_TRADITION_NOTES.to_string()),
             )
+            .set(KEY_BATCH, self.batch().to_string())
     }
 }
 

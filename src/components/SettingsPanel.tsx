@@ -283,6 +283,14 @@ function StatsGroup({ t, open }: { t: Translate; open: boolean }) {
               <span className="stats__label">{t("statsLatency")}</span>
             </div>
           </div>
+          {stats.requests > 0 ? (
+            <p className="stats__requests">
+              {t("statsBatch", {
+                prayers: stats.total,
+                requests: stats.requests,
+              })}
+            </p>
+          ) : null}
 
           {stats.failures > 0 ? (
             <p className="stats__failures">

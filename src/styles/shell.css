@@ -675,6 +675,13 @@
   font-size: 11px;
 }
 
+.stats__requests {
+  margin: 10px 0 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .stats__providers {
   margin: 12px 0 0;
   padding: 0;

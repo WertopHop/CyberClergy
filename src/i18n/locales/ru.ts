@@ -44,6 +44,7 @@ export const ru: Dictionary = {
   chapelQuietHint: "Пока сети не отвечают, звучит канон традиции.",
   chapelQuiet: "тихая молитва",
   chapelPending: "на отмаливании: {count}",
+  chapelBuffered: "в запасе: {count}",
   chapelBudget: "квота {done}/{limit}",
   chapelCooldown: "пауза {secs} с",
 
@@ -101,6 +102,7 @@ export const ru: Dictionary = {
   statsTotal: "молитв всего",
   statsTokens: "токенов",
   statsLatency: "средний ответ",
+  statsBatch: "{prayers} молитв в {requests} запросах",
   statsFailures: "неудачных вызовов",
   statsEmpty: "Журнал пока пуст.",
   statsProviderQuiet: "тихий канон",

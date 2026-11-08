@@ -12,9 +12,10 @@
   },
   "style": {
     "tone": "reverent, warm and grounded",
-    "length": "one short paragraph of roughly 60 to 110 words",
-    "short_length": "one or two sentences of roughly 15 to 30 words"
+    "length": "one or two short paragraphs of roughly 120 to 200 words",
+    "short_length": "one short paragraph of roughly 40 to 60 words"
   },
+  "batch": 3,
   "schedule": {
     "interval_seconds": 900,
     "min_interval_seconds": 300

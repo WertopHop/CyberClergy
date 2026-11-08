@@ -98,6 +98,8 @@ export interface ChapelStatus {
   next_in_secs: number | null;
   /** Network an entry is pinned to but which no robot on the cloud runs. */
   waiting_for: ProviderId | null;
+  /** Prayers a batch already paid for, waiting for their turn. */
+  buffered: number;
 }
 
 export type PrayerSource = "schedule" | "intercession" | "quiet";
@@ -175,6 +177,8 @@ export interface PrayerStats {
   total: number;
   /** Successful prayers in the last 24 hours. */
   today: number;
+  /** Network calls that produced at least one prayer. */
+  requests: number;
   failures: number;
   prompt_tokens: number;
   completion_tokens: number;
@@ -198,6 +202,8 @@ export interface PrayerRecord {
   prompt_tokens: number;
   completion_tokens: number;
   elapsed_ms: number;
+  /** Prayers the call yielded; zero for prayers replayed from an earlier batch. */
+  prayers_per_request: number;
   ok: boolean;
   error: string | null;
 }

@@ -14,13 +14,13 @@
 //! no timer of its own — it checks the clock, computes the next wait and sleeps
 //! until something interesting can happen.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use cyberclergy_llm::{
-    Cadence, ChatResponse, IntercessionTask, LlmError, Meter, Policy, PrayerGenerator, PrayerSpec,
-    DEFAULT_BUDGET_PER_HOUR,
+    split_prayers, Cadence, ChatResponse, IntercessionTask, LlmError, Meter, Policy,
+    PrayerGenerator, PrayerSpec, DEFAULT_BUDGET_PER_HOUR,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -39,6 +39,84 @@ const MAX_IN_FLIGHT: usize = 2;
 /// Upper bound for a single sleep. Notifications wake the loop earlier, so this
 /// only matters when nothing else happens.
 const IDLE_WAIT_SECS: u64 = 10;
+/// Prayers kept per slot from one batch. Beyond this the leftovers would go
+/// stale before their turn came.
+const MAX_BUFFERED: usize = 4;
+
+/// One prayer a request already paid for.
+#[derive(Debug, Clone)]
+pub struct BufferedPrayer {
+    pub text: String,
+    pub provider: Option<cyberclergy_llm::ProviderId>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug)]
+struct SlotBuffer {
+    key: String,
+    texts: VecDeque<BufferedPrayer>,
+}
+
+/// Leftovers of the last batch, one queue per cleric.
+///
+/// A batch is composed for one intention, religion and language; a leftover is
+/// only spent on a turn that asks for exactly the same, so a prayer written for
+/// one confession is never handed to another.
+#[derive(Debug, Default)]
+pub struct PrayerBuffers {
+    slots: BTreeMap<usize, SlotBuffer>,
+}
+
+impl PrayerBuffers {
+    pub fn take(&mut self, slot: usize, key: &str) -> Option<BufferedPrayer> {
+        let buffer = self.slots.get_mut(&slot)?;
+        if buffer.key != key {
+            // The intention, religion or language moved on: drop, never
+            // misapply.
+            self.slots.remove(&slot);
+            return None;
+        }
+        let next = buffer.texts.pop_front();
+        if buffer.texts.is_empty() {
+            self.slots.remove(&slot);
+        }
+        next
+    }
+
+    pub fn store(&mut self, slot: usize, key: &str, prayers: Vec<BufferedPrayer>) {
+        let texts: VecDeque<BufferedPrayer> = prayers.into_iter().take(MAX_BUFFERED).collect();
+        if texts.is_empty() {
+            self.slots.remove(&slot);
+            return;
+        }
+        self.slots.insert(
+            slot,
+            SlotBuffer {
+                key: key.to_string(),
+                texts,
+            },
+        );
+    }
+
+    pub fn clear_slot(&mut self, slot: usize) {
+        self.slots.remove(&slot);
+    }
+
+    pub fn clear(&mut self) {
+        self.slots.clear();
+    }
+
+    /// Prayers waiting for their turn, for the status snapshot.
+    pub fn len(&self) -> usize {
+        self.slots.values().map(|buffer| buffer.texts.len()).sum()
+    }
+}
+
+/// What a request was composed for. It travels with the job so the buffer can
+/// refuse to spend a prayer on a different question.
+fn prayer_key(religion: &str, language: &str, intent: Option<&str>) -> String {
+    format!("{religion}|{language}|{}", intent.unwrap_or(""))
+}
 
 /// Payload of [`EVENT_PRAYER`].
 #[derive(Debug, Clone, Serialize)]
@@ -79,6 +157,8 @@ pub struct ChapelStatus {
     pub next_in_secs: Option<u64>,
     /// Network an entry is pinned to but which no robot on the cloud runs.
     pub waiting_for: Option<cyberclergy_llm::ProviderId>,
+    /// Prayers a batch already paid for, waiting for their turn.
+    pub buffered: usize,
 }
 
 /// Reads the hourly call budget from the environment, falling back to the
@@ -149,6 +229,8 @@ struct Job {
     kind: Kind,
     religion: String,
     source: PrayerSource,
+    /// See [`prayer_key`].
+    key: String,
 }
 
 enum Kind {
@@ -158,6 +240,8 @@ enum Kind {
         /// Network of the slot; `None` falls back to the ordinary rotation.
         provider: Option<cyberclergy_llm::ProviderId>,
     },
+    /// A prayer from an earlier batch: no request, no tokens, no budget.
+    Replay(BufferedPrayer),
     Quiet {
         text: String,
     },
@@ -171,6 +255,7 @@ struct Finished {
 
 enum Outcome {
     Live(Result<ChatResponse, LlmError>),
+    Replay,
     Quiet,
 }
 
@@ -182,6 +267,7 @@ async fn run_job(job: Job) -> Finished {
             spec,
             provider,
         } => Outcome::Live(generator.generate_for(*provider, spec).await),
+        Kind::Replay(_) => Outcome::Replay,
         Kind::Quiet { .. } => Outcome::Quiet,
     };
     Finished {
@@ -227,15 +313,41 @@ fn plan(shared: &Arc<Mutex<AppState>>, busy: &BTreeSet<usize>) -> Option<Job> {
         *due = cadence.next_due(now, multiplier);
     }
 
-    let can_call = state.health.can_call(now);
     let language = state.prayer_language();
+    let religion = preferences.religion.clone();
+    let key = prayer_key(
+        &religion,
+        language,
+        task.as_ref().map(|task| task.direction.as_str()),
+    );
+    let source = match &task {
+        Some(_) => PrayerSource::Intercession,
+        None => PrayerSource::Schedule,
+    };
+
+    // A prayer paid for by an earlier request costs nothing, so it is spent
+    // before the budget is even consulted: batching also bridges a spent hour.
+    if let Some(buffered) = state.buffers.take(cleric, &key) {
+        return Some(Job {
+            cleric,
+            task,
+            kind: Kind::Replay(buffered),
+            religion,
+            source,
+            key,
+        });
+    }
+
+    let can_call = state.health.can_call(now);
     let provider = roster.get(cleric).copied();
     let kind = match (can_call, state.generator.clone()) {
         (true, Some(generator)) => {
             state.health.note_attempt(now);
+            let batch = state.batch(profile.batch);
             let mut spec = profile
                 .short_prayer_spec()
-                .with_language(language.to_string());
+                .with_language(language.to_string())
+                .with_batch(batch);
             if let Some(task) = &task {
                 spec = spec.with_intent(task.direction.clone());
             }
@@ -261,14 +373,16 @@ fn plan(shared: &Arc<Mutex<AppState>>, busy: &BTreeSet<usize>) -> Option<Job> {
         (Kind::Quiet { .. }, _) => PrayerSource::Quiet,
         (Kind::Live { .. }, Some(_)) => PrayerSource::Intercession,
         (Kind::Live { .. }, None) => PrayerSource::Schedule,
+        (Kind::Replay(_), _) => source,
     };
 
     Some(Job {
         cleric,
         task,
         kind,
-        religion: preferences.religion.clone(),
+        religion,
         source,
+        key,
     })
 }
 
@@ -307,7 +421,7 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
         Outcome::Quiet => {
             let text = match &finished.job.kind {
                 Kind::Quiet { text } => text.clone(),
-                Kind::Live { .. } => return,
+                _ => return,
             };
             record = Some(PrayerRecord {
                 created_at: now,
@@ -324,6 +438,7 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
                 prompt_tokens: 0,
                 completion_tokens: 0,
                 elapsed_ms: finished.elapsed_ms,
+                prayers_per_request: 0,
                 ok: true,
                 error: None,
             });
@@ -345,6 +460,50 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
                 at: now,
             });
         }
+        Outcome::Replay => {
+            let buffered = match &finished.job.kind {
+                Kind::Replay(buffered) => buffered.clone(),
+                _ => return,
+            };
+            // The request that produced this prayer is already in the journal,
+            // so the replay row carries no tokens and no tokens budget.
+            counted = task.is_some();
+            record = Some(PrayerRecord {
+                created_at: now,
+                religion: finished.job.religion.clone(),
+                provider: buffered.provider,
+                model: buffered.model.clone(),
+                cleric: finished.job.cleric,
+                source: finished.job.source,
+                intercession_id: task.as_ref().map(|task| task.id.clone()),
+                theme: task.as_ref().map(|task| task.theme.as_str().to_string()),
+                ordinal: task.as_ref().map(|task| task.ordinal),
+                target,
+                text: Some(buffered.text.clone()),
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                elapsed_ms: 0,
+                prayers_per_request: 0,
+                ok: true,
+                error: None,
+            });
+            prayer = Some(PrayerEvent {
+                cleric: finished.job.cleric,
+                text: buffered.text,
+                source: finished.job.source,
+                provider: buffered.provider,
+                model: buffered.model,
+                theme: task.as_ref().map(|task| task.theme.as_str().to_string()),
+                severity: task.as_ref().map(|task| task.severity.as_str().to_string()),
+                ordinal: task.as_ref().map(|task| task.ordinal),
+                target,
+                intercession_id: task.as_ref().map(|task| task.id.clone()),
+                elapsed_ms: 0,
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                at: now,
+            });
+        }
         Outcome::Live(Ok(response)) => {
             let elapsed_ms = finished.elapsed_ms;
             let usage = response.usage.unwrap_or_default();
@@ -353,6 +512,29 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
             state.health.note_success(seconds);
             state.last_error = None;
             counted = task.is_some();
+
+            // One response may hold several prayers: the first is spoken now,
+            // the rest wait for this slot's next turns, so the rhythm stays the
+            // same while the number of requests drops.
+            let mut texts = split_prayers(&response.text);
+            if texts.is_empty() {
+                // The network answered but the text survived no filter; keep it
+                // rather than swallowing the words.
+                texts.push(response.text.trim().to_string());
+            }
+            let prayers_per_request = texts.len() as u32;
+            let text = texts.remove(0);
+            let leftovers = texts
+                .into_iter()
+                .map(|text| BufferedPrayer {
+                    text,
+                    provider: Some(response.provider),
+                    model: Some(response.model.clone()),
+                })
+                .collect();
+            state
+                .buffers
+                .store(finished.job.cleric, &finished.job.key, leftovers);
 
             record = Some(PrayerRecord {
                 created_at: now,
@@ -365,16 +547,17 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
                 theme: task.as_ref().map(|task| task.theme.as_str().to_string()),
                 ordinal: task.as_ref().map(|task| task.ordinal),
                 target,
-                text: Some(response.text.clone()),
+                text: Some(text.clone()),
                 prompt_tokens,
                 completion_tokens,
                 elapsed_ms,
+                prayers_per_request,
                 ok: true,
                 error: None,
             });
             prayer = Some(PrayerEvent {
                 cleric: finished.job.cleric,
-                text: response.text,
+                text,
                 source: finished.job.source,
                 provider: Some(response.provider),
                 model: Some(response.model),
@@ -391,6 +574,9 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
         }
         Outcome::Live(Err(error)) => {
             state.health.note_failure(seconds, error.retry_after());
+            // Whatever this slot still held was composed by a network that is
+            // now refusing: drop it instead of praying stale words.
+            state.buffers.clear_slot(finished.job.cleric);
             let message = error.to_string();
             state.last_error = Some(message.clone());
             record = Some(PrayerRecord::failure(
@@ -497,6 +683,7 @@ pub fn status_of(state: &AppState, now: i64) -> ChapelStatus {
         error: state.last_error.clone(),
         next_in_secs,
         waiting_for,
+        buffered: state.buffers.len(),
     }
 }
 
@@ -513,5 +700,63 @@ mod tests {
             Some(0)
         );
         assert_eq!(next_due_slot(&schedule, &BTreeSet::new(), 0), None);
+    }
+
+    fn prayer(text: &str) -> BufferedPrayer {
+        BufferedPrayer {
+            text: text.to_string(),
+            provider: Some(cyberclergy_llm::ProviderId::Groq),
+            model: None,
+        }
+    }
+
+    #[test]
+    fn a_batch_is_spent_one_prayer_per_turn() {
+        let mut buffers = PrayerBuffers::default();
+        buffers.store(
+            2,
+            "christianity|English|",
+            vec![prayer("second"), prayer("third")],
+        );
+        assert_eq!(buffers.len(), 2);
+        assert_eq!(
+            buffers.take(2, "christianity|English|").unwrap().text,
+            "second"
+        );
+        assert_eq!(
+            buffers.take(2, "christianity|English|").unwrap().text,
+            "third"
+        );
+        assert!(buffers.take(2, "christianity|English|").is_none());
+        assert_eq!(buffers.len(), 0);
+    }
+
+    #[test]
+    fn leftovers_for_another_intention_are_dropped() {
+        let mut buffers = PrayerBuffers::default();
+        buffers.store(0, "islam|English|grief", vec![prayer("left over")]);
+        assert!(
+            buffers.take(0, "islam|English|guilt").is_none(),
+            "a prayer for grief must not be spent on guilt"
+        );
+        assert_eq!(buffers.len(), 0, "the mismatched leftovers are gone");
+    }
+
+    #[test]
+    fn a_failed_slot_forgets_its_batch() {
+        let mut buffers = PrayerBuffers::default();
+        buffers.store(1, "judaism|Russian|", vec![prayer("one"), prayer("two")]);
+        buffers.clear_slot(1);
+        assert!(buffers.take(1, "judaism|Russian|").is_none());
+    }
+
+    #[test]
+    fn the_buffer_never_grows_without_bound() {
+        let mut buffers = PrayerBuffers::default();
+        let many: Vec<BufferedPrayer> = (0..MAX_BUFFERED + 3)
+            .map(|index| prayer(&format!("prayer {index}")))
+            .collect();
+        buffers.store(0, "islam|English|", many);
+        assert_eq!(buffers.len(), MAX_BUFFERED);
     }
 }

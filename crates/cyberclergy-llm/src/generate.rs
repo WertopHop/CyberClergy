@@ -10,7 +10,10 @@ use crate::types::{ChatMessage, ChatRequest, ChatResponse, ProviderId};
 
 /// The user turn is intentionally minimal: all instructions live in the
 /// editable system prompt under `resources/prompts/system_prompt.md`.
-pub const USER_INSTRUCTION: &str = "Compose the prayer now.";
+pub const USER_INSTRUCTION: &str = "Compose the prayers now.";
+/// Ceiling for a batched response. Free tiers start rejecting the request
+/// outright well before this, and a batch that dies on a 400 saves nothing.
+pub const BATCH_TOKEN_CAP: u32 = 4096;
 
 /// Renders the system prompt and wraps it into a provider-agnostic request.
 pub fn build_prayer_request(
@@ -108,9 +111,22 @@ impl PrayerGenerator {
     }
 
     fn prepare(&self, spec: &PrayerSpec) -> Result<ChatRequest, LlmError> {
-        self.build_request(spec)
-            .map_err(|error| LlmError::PromptInvalid {
-                detail: error.to_string(),
-            })
+        let mut request =
+            self.build_request(spec)
+                .map_err(|error| LlmError::PromptInvalid {
+                    detail: error.to_string(),
+                })?;
+        request.max_tokens = Some(self.batch_budget(spec.batch()));
+        Ok(request)
+    }
+
+    /// One request now answers several prayers, so the token budget grows with
+    /// the batch; otherwise the last prayers of a batch are cut mid-sentence.
+    fn batch_budget(&self, batch: u32) -> u32 {
+        self.registry
+            .shared()
+            .max_tokens
+            .saturating_mul(batch)
+            .min(BATCH_TOKEN_CAP)
     }
 }

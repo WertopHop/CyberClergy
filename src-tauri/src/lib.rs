@@ -35,6 +35,7 @@ use tokio::sync::Notify;
 use confessions::{ConfessionStore, CONFESSIONS_FILE};
 use history::{now_millis, now_secs, History, PrayerRecord, PrayerStats, HISTORY_FILE};
 use prefs::{Preferences, PrefsStore, SETTINGS_FILE};
+use scheduler::PrayerBuffers;
 use secrets::SecretStore;
 
 /// Every command and the scheduler share this handle.
@@ -65,6 +66,19 @@ pub struct AppState {
     quiet_rotation: u64,
     /// Last failure, cleared by the next successful prayer.
     last_error: Option<String>,
+    /// Prayers a batch already paid for, waiting for their slot's turn.
+    buffers: PrayerBuffers,
+    /// `CC_BATCH` override; religion profiles carry their own default.
+    batch_override: Option<u32>,
+}
+
+/// Experimental batch size from the environment, clamped to what the prompt
+/// contract allows.
+fn batch_from_env() -> Option<u32> {
+    std::env::var("CC_BATCH")
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .map(|value| value.clamp(1, cyberclergy_llm::MAX_BATCH))
 }
 
 impl AppState {
@@ -95,6 +109,8 @@ impl AppState {
             schedule_roster: Vec::new(),
             quiet_rotation: 0,
             last_error: None,
+            buffers: PrayerBuffers::default(),
+            batch_override: batch_from_env(),
         };
         state.rebuild_providers();
         state.ensure_schedule(now_secs());
@@ -147,6 +163,12 @@ impl AppState {
         self.preferences().cloud(&self.configured_ids())
     }
 
+    /// Prayers per request for this turn: the experiment override, otherwise
+    /// the religion's own batch.
+    fn batch(&self, fallback: u32) -> u32 {
+        self.batch_override.unwrap_or(fallback)
+    }
+
     fn provider_views(&self) -> Vec<ProviderView> {
         PROVIDER_SPECS
             .iter()
@@ -189,11 +211,20 @@ impl AppState {
         let previous = self.preferences();
         let stored = self.secrets.prefs_mut().set_preferences(preferences)?;
 
+        let roster_changed = self.roster() != self.schedule_roster;
+        if stored.religion != previous.religion
+            || stored.language != previous.language
+            || roster_changed
+        {
+            // Prayers already composed for the old religion, language or
+            // network no longer fit and must not be spent.
+            self.buffers.clear();
+        }
+
         // Only the rhythm-shaping settings reset the schedule; switching a theme
-        // or a language must not scatter the clerics' turns.
-        let rhythm_changed = stored.religion != previous.religion
-            || stored.pace != previous.pace
-            || self.roster() != self.schedule_roster;
+        // must not scatter the clerics' turns.
+        let rhythm_changed =
+            stored.religion != previous.religion || stored.pace != previous.pace || roster_changed;
         if rhythm_changed {
             self.schedule.clear();
             self.ensure_schedule(now_secs());

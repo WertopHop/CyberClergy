@@ -115,6 +115,11 @@ function StatusBar({ t, status }: { t: Translate; status: ChapelStatus | null })
           limit: status.budget.limit,
         })}
       </span>
+      {status.buffered > 0 ? (
+        <span className="status-chip status-chip--muted">
+          {t("chapelBuffered", { count: status.buffered })}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -194,7 +199,8 @@ export function Chapel({
                     {bubble ? (
                       <PrayerBubble
                         key={bubble.at}
-                        text={bubble.text}
+                        text={bubble.text.slice(0, bubble.shown)}
+                        typing={bubble.shown < bubble.text.length}
                         meta={bubbleMeta(bubble, t)}
                         quiet={bubble.source === "quiet"}
                       />

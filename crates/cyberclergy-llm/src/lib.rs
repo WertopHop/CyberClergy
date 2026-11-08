@@ -9,6 +9,7 @@
 //! editable prompt in `resources/prompts/system_prompt.md`, so every provider
 //! receives identical instructions.
 
+pub mod batch;
 pub mod clergy;
 pub mod config;
 pub mod errors;
@@ -19,6 +20,7 @@ pub mod providers;
 pub mod redact;
 pub mod types;
 
+pub use batch::{split_prayers, DEFAULT_PROFILE_BATCH, MAX_BATCH, SEPARATOR};
 pub use clergy::intercession::{target_for, MAX_REPEAT, MAX_TEXT_CHARS};
 pub use clergy::scheduler::{DEFAULT_BUDGET_PER_HOUR, OFFLINE_AFTER_FAILURES};
 pub use clergy::{

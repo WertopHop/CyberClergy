@@ -284,6 +284,8 @@ export async function prayerStats(): Promise<PrayerStats> {
   return {
     total: demoRuntime.total,
     today: demoRuntime.total,
+    // The preview makes one request per step, so calls and prayers match.
+    requests: demoRuntime.total,
     failures: 0,
     prompt_tokens: 0,
     completion_tokens: 0,
@@ -390,6 +392,7 @@ function demoStatus(): ChapelStatus {
     error: null,
     next_in_secs: null,
     waiting_for: null,
+    buffered: 0,
   };
 }
 

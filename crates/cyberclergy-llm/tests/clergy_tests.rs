@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use cyberclergy_llm::clergy::{
     ProfileCatalog, ProfileError, ADDENDUM_FILE, OFFLINE_FILE, PROFILE_FILE,
 };
-use cyberclergy_llm::{build_prayer_request, PromptTemplate};
+use cyberclergy_llm::{build_prayer_request, PromptTemplate, MAX_BATCH};
 
 fn embedded() -> ProfileCatalog {
     ProfileCatalog::embedded().expect("built-in profiles must be valid")
@@ -148,6 +148,47 @@ fn short_specs_use_the_compact_length() {
     assert_ne!(normal.length, short.length);
     assert_eq!(short.tone, normal.tone);
     assert_eq!(short.tradition_notes, normal.tradition_notes);
+}
+
+/// The whole point of the batch: one request, several prayers.
+#[test]
+fn the_prompt_asks_for_the_batch_the_scheduler_requested() {
+    let catalog = embedded();
+    let profile = catalog
+        .get("christianity")
+        .expect("christianity is embedded");
+    let template = PromptTemplate::system_prompt();
+
+    let default = build_prayer_request(&template, &profile.prayer_spec())
+        .expect("the default spec renders");
+    let default = default.system.expect("system prompt is present");
+    assert!(
+        default.contains("prayers in this response: 1"),
+        "a spec that says nothing asks for one prayer"
+    );
+    assert!(
+        default.contains("---"),
+        "the separator contract is part of the prompt"
+    );
+
+    let batched = profile.short_prayer_spec().with_batch(profile.batch);
+    assert_eq!(batched.batch(), profile.batch);
+    let request = build_prayer_request(&template, &batched).expect("the batched spec renders");
+    let system = request.system.expect("system prompt is present");
+    assert!(
+        system.contains(&format!("prayers in this response: {}", profile.batch)),
+        "the profile's batch reaches the model"
+    );
+    assert!(!system.contains("{{"));
+}
+
+#[test]
+fn an_oversized_batch_is_clamped_to_the_contract() {
+    let catalog = embedded();
+    let profile = catalog.get("islam").expect("islam is embedded");
+
+    assert_eq!(profile.prayer_spec().with_batch(50).batch(), MAX_BATCH);
+    assert_eq!(profile.prayer_spec().with_batch(0).batch(), 1);
 }
 
 #[test]

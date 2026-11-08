@@ -58,6 +58,11 @@ pub struct ReligionProfile {
     pub version: u32,
     pub identity: Identity,
     pub style: Style,
+    /// Prayers one request should yield. Free tiers bill per request, so the
+    /// scheduler asks for a batch and spends it at the ordinary rhythm; an
+    /// interactive caller keeps the prompt default of one.
+    #[serde(default = "default_profile_batch")]
+    pub batch: u32,
     pub schedule: Schedule,
     /// Loaded from `prompt_addendum.md` next to the profile, never from JSON.
     #[serde(skip)]
@@ -285,6 +290,12 @@ impl ReligionProfile {
                 }
             }
         }
+        if self.batch == 0 || self.batch > crate::batch::MAX_BATCH {
+            return Err(invalid(format!(
+                "batch must be between 1 and {}",
+                crate::batch::MAX_BATCH
+            )));
+        }
         if self.schedule.min_interval_seconds < 60 {
             return Err(invalid(
                 "schedule.min_interval_seconds must be at least 60".to_string(),
@@ -419,6 +430,10 @@ impl ProfileCatalog {
     pub fn is_empty(&self) -> bool {
         self.profiles.is_empty()
     }
+}
+
+fn default_profile_batch() -> u32 {
+    crate::batch::DEFAULT_PROFILE_BATCH
 }
 
 fn parse_profile(

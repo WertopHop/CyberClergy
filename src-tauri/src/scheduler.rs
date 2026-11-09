@@ -60,6 +60,9 @@ const MAX_IN_FLIGHT: usize = 2;
 const MAX_WAIT_MS: u64 = 2_000;
 /// And never spins: below this there is nothing to do anyway.
 const MIN_WAIT_MS: u64 = 100;
+/// Shortest gap between two planning passes, so a turn that finishes instantly
+/// cannot outrun the clock.
+const PLAN_FLOOR_MS: u64 = 500;
 /// Prayers kept per slot from one batch. Beyond this the leftovers would go
 /// stale before their turn came.
 const MAX_BUFFERED: usize = 4;
@@ -219,6 +222,9 @@ async fn run(app: AppHandle, shared: Arc<Mutex<AppState>>) {
 
     let mut set: JoinSet<Finished> = JoinSet::new();
     let mut busy: BTreeSet<usize> = BTreeSet::new();
+    // A turn that costs nothing — the canon, a prayer from a batch — finishes
+    // in a blink. This keeps such a run from turning into a busy spin.
+    let mut last_plan: Option<Instant> = None;
 
     loop {
         // Collect everything that finished since the last pass.
@@ -234,12 +240,20 @@ async fn run(app: AppHandle, shared: Arc<Mutex<AppState>>) {
             busy.clear();
         }
 
-        while set.len() < MAX_IN_FLIGHT {
-            let Some(job) = plan(&shared, &busy) else {
-                break;
-            };
-            busy.insert(job.cleric);
-            set.spawn(run_job(job));
+        let floor = Duration::from_millis(PLAN_FLOOR_MS);
+        if last_plan.is_none_or(|started| started.elapsed() >= floor) {
+            let mut planned = false;
+            while set.len() < MAX_IN_FLIGHT {
+                let Some(job) = plan(&shared, &busy) else {
+                    break;
+                };
+                busy.insert(job.cleric);
+                planned = true;
+                set.spawn(run_job(job));
+            }
+            if planned {
+                last_plan = Some(Instant::now());
+            }
         }
 
         emit_status(&app, &shared, now_secs());
@@ -351,8 +365,12 @@ fn plan(shared: &Arc<Mutex<AppState>>, busy: &BTreeSet<usize>) -> Option<Job> {
         return None;
     }
 
-    let busy_slots: Vec<usize> = busy.iter().copied().collect();
-    let intercession = state.confessions.queue().next_task(&busy_slots);
+    // A turn belongs to a slot's own clock, whichever prayer it carries. The
+    // confessional queue used to borrow any cleric, so a quiet canon — which
+    // costs nothing and finishes instantly — was replayed thousands of times a
+    // minute while an entry waited.
+    let unavailable = unavailable_slots(&state.schedule, busy, now);
+    let intercession = state.confessions.queue().next_task(&unavailable);
     let (cleric, task) = match intercession {
         Some(task) => (task.cleric, Some(task)),
         None => (next_due_slot(&state.schedule, busy, now)?, None),
@@ -439,6 +457,22 @@ fn plan(shared: &Arc<Mutex<AppState>>, busy: &BTreeSet<usize>) -> Option<Job> {
         source,
         key,
     })
+}
+
+/// Slots that may not take a turn now: already praying, or still waiting out
+/// the pause counted from their last prayer.
+fn unavailable_slots(schedule: &[i64], busy: &BTreeSet<usize>, now: i64) -> Vec<usize> {
+    let mut slots: Vec<usize> = busy.iter().copied().collect();
+    slots.extend(
+        schedule
+            .iter()
+            .enumerate()
+            .filter(|(_, due)| **due > now)
+            .map(|(slot, _)| slot),
+    );
+    slots.sort_unstable();
+    slots.dedup();
+    slots
 }
 
 /// Earliest slot whose turn has come and which is not already praying.
@@ -799,6 +833,22 @@ mod tests {
             Some(0)
         );
         assert_eq!(next_due_slot(&schedule, &BTreeSet::new(), 0), None);
+    }
+
+    #[test]
+    fn a_slot_waiting_out_its_pause_is_unavailable() {
+        let schedule = [10, 20, 5];
+        // Slot 2 is due, slot 0 still waits, slot 1 has already prayed.
+        assert_eq!(
+            unavailable_slots(&schedule, &BTreeSet::new(), 8),
+            vec![0, 1]
+        );
+        assert_eq!(
+            unavailable_slots(&schedule, &BTreeSet::from([2]), 8),
+            vec![0, 1, 2]
+        );
+        // Everything due and free: a quiet canon cannot borrow another slot.
+        assert!(unavailable_slots(&[0, 0, 0], &BTreeSet::new(), 8).is_empty());
     }
 
     fn prayer(text: &str) -> BufferedPrayer {

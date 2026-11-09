@@ -26,7 +26,8 @@ OPTIONS:
   -h, --help             Show this help
 
 PROVIDERS:
-  openrouter, gemini, groq, mistral, cloudflare, nvidia
+  openrouter, gemini, groq, mistral, cloudflare, nvidia, together, cerebras,
+  deepinfra, github-models, ollama (local), custom (CUSTOM_BASE_URL)
 
 Without --provider every configured provider is probed in CC_PROVIDER_ORDER.";
 

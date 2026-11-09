@@ -7,18 +7,31 @@ export type ProviderId =
   | "groq"
   | "mistral"
   | "cloudflare"
-  | "nvidia";
+  | "nvidia"
+  | "together"
+  | "cerebras"
+  | "deepinfra"
+  | "github-models"
+  | "ollama"
+  | "custom";
 
 export interface ProviderField {
   /** Environment-style variable name, for example `OPENROUTER_API_KEY`. */
   name: string;
   /** Whether a value is already known (from `.env` or the secret store). */
   set: boolean;
+  /** True for keys and tokens, which are typed into a masked input. */
+  secret: boolean;
 }
 
 export interface ProviderView {
   id: ProviderId;
+  /** Model in effect: the person's choice, or the built-in default. */
   model: string;
+  /** Built-in default, shown as the placeholder of the model editor. */
+  default_model: string;
+  /** Variable the model editor writes to, for example `GROQ_MODEL`. */
+  model_var: string;
   configured: boolean;
   fields: ProviderField[];
 }

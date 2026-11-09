@@ -1,16 +1,16 @@
 // The cloud the clerics stand on.
 //
 // It is drawn as a stepped platform instead of a pile of blurred circles: up to
-// three tiers, each a flat slab with a lit top edge over a body that sinks to the
+// four tiers, each a flat slab with a lit top edge over a body that sinks to the
 // bottom of the scene. The tiers are stacked back to front so every row of
 // clerics has its own shelf, and the whole scene layer keeps the rows in line at
 // any window size because the SVG is stretched to the scene box.
 //
 // Geometry is shared with the row offsets in Chapel.tsx: the front slab sits at
 // 35% of the scene height, each further tier is 10% higher and 120 units in the
-// viewBox, which is 1200 units tall.
-const TIER_TOPS = [780, 660, 540];
-const TIER_INSETS = [24, 200, 360];
+// viewBox, which is 1200 units tall. Four tiers hold twelve robots.
+const TIER_TOPS = [780, 660, 540, 420];
+const TIER_INSETS = [24, 200, 360, 520];
 const SLAB_HEIGHT = 80;
 const SCENE_UNITS = 1200;
 

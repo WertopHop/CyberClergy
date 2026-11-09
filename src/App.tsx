@@ -10,7 +10,7 @@ import { TitleBar } from "./components/TitleBar";
 import { useChapel } from "./hooks/useChapel";
 import { useConfessions } from "./hooks/useConfessions";
 import { usePreferences } from "./hooks/usePreferences";
-import { useTranslate } from "./i18n";
+import { localeFor, useTranslate } from "./i18n";
 import { listProviders, listReligions } from "./lib/bridge";
 import { cloudRoster } from "./lib/providers";
 import type { ProviderView, ReligionProfile } from "./lib/types";
@@ -49,6 +49,8 @@ export default function App() {
     const root = document.documentElement;
     root.dataset.theme = preferences.theme;
     root.lang = preferences.language;
+    // Hebrew flips the whole shell; the flex layouts follow `dir` on their own.
+    root.dir = localeFor(preferences.language).dir;
   }, [preferences.theme, preferences.language]);
 
   const religion = useMemo(

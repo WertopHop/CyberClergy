@@ -19,13 +19,16 @@ use serde::{Deserialize, Serialize};
 
 pub const SETTINGS_FILE: &str = "settings.json";
 
-pub const SUPPORTED_LANGUAGES: &[&str] = &["ru", "en"];
+/// Every interface language the bundled locales cover. The list mirrors
+/// `src/i18n/index.ts`; a mismatch would only cost a fallback to English.
+pub const SUPPORTED_LANGUAGES: &[&str] = &["ru", "en", "uk", "he", "de", "es"];
 pub const SUPPORTED_THEMES: &[&str] = &["night", "dawn"];
 pub const DEFAULT_LANGUAGE: &str = "ru";
 pub const DEFAULT_THEME: &str = "night";
 pub const DEFAULT_RELIGION: &str = "christianity";
-/// Highest number of robots the cloud holds: three tiers of three.
-pub const MAX_ROBOTS: usize = 9;
+/// Highest number of robots the cloud holds: four tiers of three, matching the
+/// `MAX_SLOTS` ceiling of the scheduler and the stepped platform in the scene.
+pub const MAX_ROBOTS: usize = 12;
 
 /// Settings the user can change from the interface.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,10 +182,13 @@ impl PrefsStore {
         Ok(())
     }
 
-    /// Forgets every credential belonging to one provider.
+    /// Forgets everything the person configured for one provider: credentials,
+    /// extra variables and the chosen model, so "Forget" really resets the row.
     pub fn clear_provider(&mut self, id: ProviderId) -> Result<(), String> {
         let spec = ProviderSpec::from_id(id);
         self.file.keys.remove(spec.api_key_var);
+        self.file.keys.remove(spec.model_var);
+        self.file.keys.remove(spec.base_url_var);
         for variable in spec.required_vars {
             self.file.keys.remove(*variable);
         }
@@ -222,10 +228,13 @@ pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), Str
 }
 
 
-/// True for the API key and for every extra variable a provider requires.
+/// True for the API key, every extra variable a provider requires and the
+/// model name, which the settings screen edits as its own field.
 pub fn is_known_variable(variable: &str) -> bool {
     PROVIDER_SPECS.iter().any(|spec| {
-        spec.api_key_var == variable || spec.required_vars.contains(&variable)
+        spec.api_key_var == variable
+            || spec.model_var == variable
+            || spec.required_vars.contains(&variable)
     })
 }
 
@@ -391,6 +400,26 @@ mod tests {
         let mut store = PrefsStore::open(temp_path("rejected"));
         assert!(store.set_key("PATH", "/usr/bin").is_err());
         assert!(store.keys().is_empty());
+    }
+
+    #[test]
+    fn a_model_override_is_a_known_setting() {
+        let path = temp_path("model");
+        let mut store = PrefsStore::open(&path);
+        store
+            .set_key("GROQ_MODEL", "llama-3.1-8b-instant")
+            .expect("the model is writable");
+        assert_eq!(
+            store.keys().get("GROQ_MODEL"),
+            Some(&"llama-3.1-8b-instant".to_string())
+        );
+
+        // Forgetting the provider also drops the chosen model.
+        store
+            .clear_provider(ProviderId::Groq)
+            .expect("clearing is writable");
+        assert!(store.keys().is_empty());
+        let _ = fs::remove_dir_all(path.parent().unwrap_or(&path));
     }
 
     #[test]

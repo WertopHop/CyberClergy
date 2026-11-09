@@ -47,6 +47,30 @@ pub const VAR_NVIDIA_API_KEY: &str = "NVIDIA_API_KEY";
 pub const VAR_NVIDIA_BASE_URL: &str = "NVIDIA_BASE_URL";
 pub const VAR_NVIDIA_MODEL: &str = "NVIDIA_MODEL";
 
+pub const VAR_TOGETHER_API_KEY: &str = "TOGETHER_API_KEY";
+pub const VAR_TOGETHER_BASE_URL: &str = "TOGETHER_BASE_URL";
+pub const VAR_TOGETHER_MODEL: &str = "TOGETHER_MODEL";
+
+pub const VAR_CEREBRAS_API_KEY: &str = "CEREBRAS_API_KEY";
+pub const VAR_CEREBRAS_BASE_URL: &str = "CEREBRAS_BASE_URL";
+pub const VAR_CEREBRAS_MODEL: &str = "CEREBRAS_MODEL";
+
+pub const VAR_DEEPINFRA_API_KEY: &str = "DEEPINFRA_API_KEY";
+pub const VAR_DEEPINFRA_BASE_URL: &str = "DEEPINFRA_BASE_URL";
+pub const VAR_DEEPINFRA_MODEL: &str = "DEEPINFRA_MODEL";
+
+pub const VAR_GITHUB_MODELS_TOKEN: &str = "GITHUB_MODELS_TOKEN";
+pub const VAR_GITHUB_MODELS_BASE_URL: &str = "GITHUB_MODELS_BASE_URL";
+pub const VAR_GITHUB_MODELS_MODEL: &str = "GITHUB_MODELS_MODEL";
+
+pub const VAR_OLLAMA_API_KEY: &str = "OLLAMA_API_KEY";
+pub const VAR_OLLAMA_BASE_URL: &str = "OLLAMA_BASE_URL";
+pub const VAR_OLLAMA_MODEL: &str = "OLLAMA_MODEL";
+
+pub const VAR_CUSTOM_API_KEY: &str = "CUSTOM_API_KEY";
+pub const VAR_CUSTOM_BASE_URL: &str = "CUSTOM_BASE_URL";
+pub const VAR_CUSTOM_MODEL: &str = "CUSTOM_MODEL";
+
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_MAX_RETRIES: u32 = 2;
 pub const DEFAULT_TEMPERATURE: f32 = 0.8;
@@ -81,6 +105,10 @@ pub struct ProviderSpec {
     pub required_vars: &'static [&'static str],
     /// Optional attribution headers as `(url_var, title_var)`.
     pub attribution_vars: Option<(&'static str, &'static str)>,
+    /// True for a backend that needs no credential at all, such as a model
+    /// running on this machine. The key variable stays declared, so a
+    /// password-protected local gateway can still be reached.
+    pub key_optional: bool,
 }
 
 pub const PROVIDER_SPECS: &[ProviderSpec] = &[
@@ -94,6 +122,7 @@ pub const PROVIDER_SPECS: &[ProviderSpec] = &[
         default_model: "meta-llama/llama-3.3-70b-instruct:free",
         required_vars: &[],
         attribution_vars: Some((VAR_OPENROUTER_APP_URL, VAR_OPENROUTER_APP_TITLE)),
+        key_optional: false,
     },
     ProviderSpec {
         id: ProviderId::Gemini,
@@ -105,6 +134,7 @@ pub const PROVIDER_SPECS: &[ProviderSpec] = &[
         default_model: "gemini-2.5-flash",
         required_vars: &[],
         attribution_vars: None,
+        key_optional: false,
     },
     ProviderSpec {
         id: ProviderId::Groq,
@@ -116,6 +146,7 @@ pub const PROVIDER_SPECS: &[ProviderSpec] = &[
         default_model: "llama-3.3-70b-versatile",
         required_vars: &[],
         attribution_vars: None,
+        key_optional: false,
     },
     ProviderSpec {
         id: ProviderId::Mistral,
@@ -127,6 +158,7 @@ pub const PROVIDER_SPECS: &[ProviderSpec] = &[
         default_model: "mistral-small-latest",
         required_vars: &[],
         attribution_vars: None,
+        key_optional: false,
     },
     ProviderSpec {
         id: ProviderId::Cloudflare,
@@ -138,6 +170,7 @@ pub const PROVIDER_SPECS: &[ProviderSpec] = &[
         default_model: "@cf/meta/llama-3.1-8b-instruct",
         required_vars: &[VAR_CLOUDFLARE_ACCOUNT_ID],
         attribution_vars: None,
+        key_optional: false,
     },
     ProviderSpec {
         id: ProviderId::Nvidia,
@@ -149,6 +182,83 @@ pub const PROVIDER_SPECS: &[ProviderSpec] = &[
         default_model: "meta/llama-3.3-70b-instruct",
         required_vars: &[],
         attribution_vars: None,
+        key_optional: false,
+    },
+    ProviderSpec {
+        id: ProviderId::Together,
+        protocol: Protocol::OpenAiChat,
+        api_key_var: VAR_TOGETHER_API_KEY,
+        base_url_var: VAR_TOGETHER_BASE_URL,
+        default_base_url: "https://api.together.xyz/v1",
+        model_var: VAR_TOGETHER_MODEL,
+        default_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+        required_vars: &[],
+        attribution_vars: None,
+        key_optional: false,
+    },
+    ProviderSpec {
+        id: ProviderId::Cerebras,
+        protocol: Protocol::OpenAiChat,
+        api_key_var: VAR_CEREBRAS_API_KEY,
+        base_url_var: VAR_CEREBRAS_BASE_URL,
+        default_base_url: "https://api.cerebras.ai/v1",
+        model_var: VAR_CEREBRAS_MODEL,
+        default_model: "llama-3.3-70b",
+        required_vars: &[],
+        attribution_vars: None,
+        key_optional: false,
+    },
+    ProviderSpec {
+        id: ProviderId::DeepInfra,
+        protocol: Protocol::OpenAiChat,
+        api_key_var: VAR_DEEPINFRA_API_KEY,
+        base_url_var: VAR_DEEPINFRA_BASE_URL,
+        default_base_url: "https://api.deepinfra.com/v1/openai",
+        model_var: VAR_DEEPINFRA_MODEL,
+        default_model: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        required_vars: &[],
+        attribution_vars: None,
+        key_optional: false,
+    },
+    ProviderSpec {
+        id: ProviderId::GithubModels,
+        protocol: Protocol::OpenAiChat,
+        api_key_var: VAR_GITHUB_MODELS_TOKEN,
+        base_url_var: VAR_GITHUB_MODELS_BASE_URL,
+        default_base_url: "https://models.github.ai/inference",
+        model_var: VAR_GITHUB_MODELS_MODEL,
+        default_model: "openai/gpt-4o-mini",
+        required_vars: &[],
+        attribution_vars: None,
+        key_optional: false,
+    },
+    // A local runtime is enabled by naming a model, not by a key: a fresh
+    // install must not put a robot on the cloud that cannot answer.
+    ProviderSpec {
+        id: ProviderId::Ollama,
+        protocol: Protocol::OpenAiChat,
+        api_key_var: VAR_OLLAMA_API_KEY,
+        base_url_var: VAR_OLLAMA_BASE_URL,
+        default_base_url: "http://localhost:11434/v1",
+        model_var: VAR_OLLAMA_MODEL,
+        default_model: "",
+        required_vars: &[VAR_OLLAMA_MODEL],
+        attribution_vars: None,
+        key_optional: true,
+    },
+    // The universal escape hatch: any OpenAI-compatible gateway, reached by
+    // pointing the app at its base URL and naming a model.
+    ProviderSpec {
+        id: ProviderId::Custom,
+        protocol: Protocol::OpenAiChat,
+        api_key_var: VAR_CUSTOM_API_KEY,
+        base_url_var: VAR_CUSTOM_BASE_URL,
+        default_base_url: "",
+        model_var: VAR_CUSTOM_MODEL,
+        default_model: "",
+        required_vars: &[VAR_CUSTOM_BASE_URL, VAR_CUSTOM_MODEL],
+        attribution_vars: None,
+        key_optional: true,
     },
 ];
 
@@ -185,9 +295,13 @@ impl ProviderConfig {
     }
 
     /// Environment variables the user still has to provide, if any.
+    ///
+    /// A provider with `key_optional` (a local runtime, a keyless gateway) is
+    /// missing nothing just because no key was given; its required variables
+    /// are what opt it in.
     pub fn missing_vars(&self) -> Vec<&'static str> {
         let mut missing = Vec::new();
-        if self.api_key.is_none() {
+        if self.api_key.is_none() && !self.spec.key_optional {
             missing.push(self.spec.api_key_var);
         }
         for variable in self.spec.required_vars {

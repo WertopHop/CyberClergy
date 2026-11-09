@@ -4,9 +4,6 @@
 import type { Translate } from "../i18n";
 import type { ProviderId } from "./types";
 
-/** Highest number of robots the cloud holds: three tiers of three. */
-export const MAX_ROBOTS = 9;
-
 /** Longest recital a person may ask for; mirrors the crate's `MAX_REPEAT`. */
 export const MAX_REPEAT = 999;
 
@@ -18,7 +15,16 @@ export const PROVIDER_IDS: ProviderId[] = [
   "mistral",
   "cloudflare",
   "nvidia",
+  "together",
+  "cerebras",
+  "deepinfra",
+  "github-models",
+  "ollama",
+  "custom",
 ];
+
+/** Highest number of robots the cloud holds: four tiers of three, one per network. */
+export const MAX_ROBOTS = PROVIDER_IDS.length;
 
 export function isProviderId(value: string): value is ProviderId {
   return PROVIDER_IDS.some((id) => id === value);
@@ -38,6 +44,18 @@ export function providerLabel(id: ProviderId, t: Translate): string {
       return t("providerCloudflare");
     case "nvidia":
       return t("providerNvidia");
+    case "together":
+      return t("providerTogether");
+    case "cerebras":
+      return t("providerCerebras");
+    case "deepinfra":
+      return t("providerDeepinfra");
+    case "github-models":
+      return t("providerGithub");
+    case "ollama":
+      return t("providerOllama");
+    case "custom":
+      return t("providerCustom");
     default:
       return id;
   }

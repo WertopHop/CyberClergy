@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use cyberclergy_llm::{
     split_prayers, Cadence, ChatResponse, IntercessionTask, LlmError, Meter, Policy,
-    PrayerGenerator, PrayerSpec, DEFAULT_BUDGET_PER_HOUR,
+    PrayerGenerator, PrayerSpec, ProviderId, DEFAULT_BUDGET_PER_HOUR,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -338,11 +338,16 @@ fn plan(shared: &Arc<Mutex<AppState>>, busy: &BTreeSet<usize>) -> Option<Job> {
         });
     }
 
-    let can_call = state.health.can_call(now);
     let provider = roster.get(cleric).copied();
+    // A model running on this machine costs no quota, so it prays even when
+    // the hourly budget is spent and is not counted against it.
+    let local = provider.map(ProviderId::is_local).unwrap_or(false);
+    let can_call = local || state.health.can_call(now);
     let kind = match (can_call, state.generator.clone()) {
         (true, Some(generator)) => {
-            state.health.note_attempt(now);
+            if !local {
+                state.health.note_attempt(now);
+            }
             let batch = state.batch(profile.batch);
             let mut spec = profile
                 .short_prayer_spec()

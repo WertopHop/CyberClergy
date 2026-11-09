@@ -4,7 +4,11 @@
   "identity": {
     "names": {
       "en": "Christianity",
-      "ru": "Христианство"
+      "ru": "Христианство",
+      "uk": "Християнство",
+      "he": "נצרות",
+      "de": "Christentum",
+      "es": "Cristianismo"
     },
     "tradition": "Christianity, kept broad and without a specific denomination",
     "prayer_term": "prayer",

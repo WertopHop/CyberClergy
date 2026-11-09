@@ -122,10 +122,15 @@ impl AppState {
     }
 
     /// The prayer language follows the interface language, so a Russian user
-    /// gets Russian prayers without touching the prompt.
+    /// gets Russian prayers without touching the prompt. The prompt names the
+    /// language in full, which models follow far more reliably than a code.
     fn prayer_language(&self) -> &'static str {
         match self.preferences().language.as_str() {
             "ru" => "Russian",
+            "uk" => "Ukrainian",
+            "he" => "Hebrew",
+            "de" => "German",
+            "es" => "Spanish",
             _ => "English",
         }
     }
@@ -176,11 +181,17 @@ impl AppState {
                 let config = self.settings.provider(spec.id);
                 let mut fields = vec![ProviderField {
                     name: spec.api_key_var,
+                    secret: is_secret_var(spec.api_key_var),
                     set: config.map(|config| config.api_key.is_some()).unwrap_or(false),
                 }];
                 for variable in spec.required_vars {
+                    // The model has its own editor, so it is listed once.
+                    if *variable == spec.model_var {
+                        continue;
+                    }
                     fields.push(ProviderField {
                         name: variable,
+                        secret: is_secret_var(variable),
                         set: config
                             .map(|config| config.required_value(variable).is_some())
                             .unwrap_or(false),
@@ -191,6 +202,8 @@ impl AppState {
                     model: config
                         .map(|config| config.model.clone())
                         .unwrap_or_else(|| spec.default_model.to_string()),
+                    default_model: spec.default_model.to_string(),
+                    model_var: spec.model_var,
                     configured: config.map(|config| config.is_configured()).unwrap_or(false),
                     fields,
                 }
@@ -272,6 +285,8 @@ pub struct ProviderField {
     pub name: &'static str,
     /// Whether the value is currently known (from `.env` or the secret store).
     pub set: bool,
+    /// True for keys and tokens, which the interface masks while typing.
+    pub secret: bool,
 }
 
 /// Provider entry rendered by the settings screen. Only names are exposed;
@@ -279,9 +294,20 @@ pub struct ProviderField {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderView {
     pub id: ProviderId,
+    /// Model in effect: the person's choice, or the built-in default.
     pub model: String,
+    /// The built-in default, shown under the model editor.
+    pub default_model: String,
+    /// Variable the model editor writes to, for example `GROQ_MODEL`.
+    pub model_var: &'static str,
     pub configured: bool,
     pub fields: Vec<ProviderField>,
+}
+
+/// Keys and tokens are typed into masked inputs; base URLs, account ids and
+/// model names stay readable, because hiding them only makes them uncheckable.
+fn is_secret_var(name: &str) -> bool {
+    name.ends_with("_API_KEY") || name.ends_with("_API_TOKEN") || name.ends_with("_TOKEN")
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -355,7 +381,10 @@ fn save_provider_field(
 ) -> Result<Vec<ProviderView>, String> {
     let id = parse_provider(&provider)?;
     let spec = ProviderSpec::from_id(id);
-    if field != spec.api_key_var && !spec.required_vars.contains(&field.as_str()) {
+    if field != spec.api_key_var
+        && field != spec.model_var
+        && !spec.required_vars.contains(&field.as_str())
+    {
         return Err(format!("`{field}` does not belong to {id}"));
     }
 

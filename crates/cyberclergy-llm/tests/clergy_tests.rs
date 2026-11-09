@@ -71,7 +71,10 @@ fn builtin_profiles_are_localised_and_valid() {
     let judaism = catalog.get("judaism").expect("judaism is embedded");
     assert_eq!(judaism.localized_name("en"), "Judaism");
     assert_eq!(judaism.localized_name("ru"), "Иудаизм");
-    assert_eq!(judaism.localized_name("de"), "Judaism");
+    assert_eq!(judaism.localized_name("uk"), "Юдаїзм");
+    assert_eq!(judaism.localized_name("he"), "יהדות");
+    assert_eq!(judaism.localized_name("de"), "Judentum");
+    assert_eq!(judaism.localized_name("es"), "Judaísmo");
     assert_eq!(judaism.identity.prayer_term, "tefillah");
     assert!(judaism.addendum.contains("HaShem"));
 
@@ -100,12 +103,16 @@ fn quiet_canon_follows_the_language_and_rotates() {
     assert!(first.contains("Господи"), "the canon is translated");
     assert_ne!(first, profile.quiet_prayer("ru", 1).expect("a second prayer exists"));
 
-    // An unknown interface language still prays, in English.
-    assert_eq!(
-        profile.quiet_prayer("de", 0),
-        profile.quiet_prayer("en", 0)
-    );
+    // Ukrainian and Hebrew keep their own canon.
+    let english = profile.quiet_prayer("en", 0).expect("english canon exists");
+    assert_ne!(profile.quiet_prayer("uk", 0).expect("ukrainian canon exists"), english);
+    assert_ne!(profile.quiet_prayer("he", 0).expect("hebrew canon exists"), english);
+
+    // A language without a translated canon still prays, in English.
+    assert_eq!(profile.quiet_prayer("de", 0), Some(english));
     assert!(profile.offline.len("ru") >= 3);
+    assert!(profile.offline.len("uk") >= 3);
+    assert!(profile.offline.len("he") >= 3);
 }
 
 #[test]

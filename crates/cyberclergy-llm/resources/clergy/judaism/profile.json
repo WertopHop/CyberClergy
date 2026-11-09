@@ -4,7 +4,11 @@
   "identity": {
     "names": {
       "en": "Judaism",
-      "ru": "Иудаизм"
+      "ru": "Иудаизм",
+      "uk": "Юдаїзм",
+      "he": "יהדות",
+      "de": "Judentum",
+      "es": "Judaísmo"
     },
     "tradition": "Judaism, kept broad and without a specific denomination",
     "prayer_term": "tefillah",

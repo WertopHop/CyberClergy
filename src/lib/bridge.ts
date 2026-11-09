@@ -56,41 +56,104 @@ const DEMO_PROVIDERS: ProviderView[] = [
   {
     id: "openrouter",
     model: "meta-llama/llama-3.3-70b-instruct:free",
+    default_model: "meta-llama/llama-3.3-70b-instruct:free",
+    model_var: "OPENROUTER_MODEL",
     configured: true,
-    fields: [{ name: "OPENROUTER_API_KEY", set: true }],
+    fields: [{ name: "OPENROUTER_API_KEY", set: true, secret: true }],
   },
   {
     id: "gemini",
     model: "gemini-2.5-flash",
+    default_model: "gemini-2.5-flash",
+    model_var: "GEMINI_MODEL",
     configured: false,
-    fields: [{ name: "GEMINI_API_KEY", set: false }],
+    fields: [{ name: "GEMINI_API_KEY", set: false, secret: true }],
   },
   {
     id: "groq",
     model: "llama-3.3-70b-versatile",
+    default_model: "llama-3.3-70b-versatile",
+    model_var: "GROQ_MODEL",
     configured: false,
-    fields: [{ name: "GROQ_API_KEY", set: false }],
+    fields: [{ name: "GROQ_API_KEY", set: false, secret: true }],
   },
   {
     id: "mistral",
     model: "mistral-small-latest",
+    default_model: "mistral-small-latest",
+    model_var: "MISTRAL_MODEL",
     configured: false,
-    fields: [{ name: "MISTRAL_API_KEY", set: false }],
+    fields: [{ name: "MISTRAL_API_KEY", set: false, secret: true }],
   },
   {
     id: "cloudflare",
     model: "@cf/meta/llama-3.1-8b-instruct",
+    default_model: "@cf/meta/llama-3.1-8b-instruct",
+    model_var: "CLOUDFLARE_MODEL",
     configured: false,
     fields: [
-      { name: "CLOUDFLARE_API_TOKEN", set: false },
-      { name: "CLOUDFLARE_ACCOUNT_ID", set: false },
+      { name: "CLOUDFLARE_API_TOKEN", set: false, secret: true },
+      { name: "CLOUDFLARE_ACCOUNT_ID", set: false, secret: false },
     ],
   },
   {
     id: "nvidia",
     model: "meta/llama-3.3-70b-instruct",
+    default_model: "meta/llama-3.3-70b-instruct",
+    model_var: "NVIDIA_MODEL",
     configured: false,
-    fields: [{ name: "NVIDIA_API_KEY", set: false }],
+    fields: [{ name: "NVIDIA_API_KEY", set: false, secret: true }],
+  },
+  {
+    id: "together",
+    model: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+    default_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+    model_var: "TOGETHER_MODEL",
+    configured: false,
+    fields: [{ name: "TOGETHER_API_KEY", set: false, secret: true }],
+  },
+  {
+    id: "cerebras",
+    model: "llama-3.3-70b",
+    default_model: "llama-3.3-70b",
+    model_var: "CEREBRAS_MODEL",
+    configured: false,
+    fields: [{ name: "CEREBRAS_API_KEY", set: false, secret: true }],
+  },
+  {
+    id: "deepinfra",
+    model: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    default_model: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    model_var: "DEEPINFRA_MODEL",
+    configured: false,
+    fields: [{ name: "DEEPINFRA_API_KEY", set: false, secret: true }],
+  },
+  {
+    id: "github-models",
+    model: "openai/gpt-4o-mini",
+    default_model: "openai/gpt-4o-mini",
+    model_var: "GITHUB_MODELS_MODEL",
+    configured: false,
+    fields: [{ name: "GITHUB_MODELS_TOKEN", set: false, secret: true }],
+  },
+  {
+    id: "ollama",
+    model: "",
+    default_model: "",
+    model_var: "OLLAMA_MODEL",
+    configured: false,
+    fields: [{ name: "OLLAMA_API_KEY", set: false, secret: true }],
+  },
+  {
+    id: "custom",
+    model: "",
+    default_model: "",
+    model_var: "CUSTOM_MODEL",
+    configured: false,
+    fields: [
+      { name: "CUSTOM_API_KEY", set: false, secret: true },
+      { name: "CUSTOM_BASE_URL", set: false, secret: false },
+    ],
   },
 ];
 
@@ -199,10 +262,19 @@ export async function saveProviderField(
     const fields = entry.fields.map((item) =>
       item.name === field ? { ...item, set: value.trim().length > 0 } : item,
     );
+    // The model has its own editor: an empty value falls back to the default,
+    // and a network without a built-in default (local, custom) then stays off.
+    const model =
+      field === entry.model_var
+        ? value.trim() || entry.default_model
+        : entry.model;
+    const credentialsReady = fields.every((item) => item.set);
+    const modelReady = entry.default_model !== "" || model !== "";
     return {
       ...entry,
+      model,
       fields,
-      configured: fields.every((item) => item.set),
+      configured: credentialsReady && modelReady,
     };
   });
   await wait(150);
@@ -219,6 +291,7 @@ export async function clearProvider(
     entry.id === provider
       ? {
           ...entry,
+          model: entry.default_model,
           configured: false,
           fields: entry.fields.map((field) => ({ ...field, set: false })),
         }

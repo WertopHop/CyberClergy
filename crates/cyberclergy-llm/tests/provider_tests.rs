@@ -257,6 +257,47 @@ async fn unconfigured_provider_reports_not_configured() {
     ));
 }
 
+#[test]
+fn a_local_runtime_is_enabled_by_its_model_not_a_key() {
+    let settings = settings_from(&[("OLLAMA_MODEL", "llama3.2")]);
+    let ollama = settings.provider(ProviderId::Ollama).expect("ollama is known");
+    assert!(ollama.is_configured(), "no key is needed for a local model");
+    assert_eq!(ollama.model, "llama3.2");
+    assert_eq!(ollama.base_url, "http://localhost:11434/v1");
+
+    // Without a model the runtime stays off, so a fresh install never stands a
+    // robot on the cloud that cannot answer.
+    let empty = settings_from(&[]);
+    assert!(!empty
+        .provider(ProviderId::Ollama)
+        .expect("ollama is known")
+        .is_configured());
+}
+
+#[test]
+fn a_custom_gateway_needs_a_base_url_and_a_model() {
+    let half = settings_from(&[("CUSTOM_BASE_URL", "http://127.0.0.1:8080/v1")]);
+    assert!(!half
+        .provider(ProviderId::Custom)
+        .expect("custom is known")
+        .is_configured());
+    assert_eq!(
+        half.provider(ProviderId::Custom)
+            .expect("custom is known")
+            .missing_vars(),
+        vec!["CUSTOM_MODEL"]
+    );
+
+    let full = settings_from(&[
+        ("CUSTOM_BASE_URL", "http://127.0.0.1:8080/v1"),
+        ("CUSTOM_MODEL", "qwen2.5"),
+    ]);
+    let custom = full.provider(ProviderId::Custom).expect("custom is known");
+    assert!(custom.is_configured(), "a keyless gateway is allowed");
+    assert_eq!(custom.base_url, "http://127.0.0.1:8080/v1");
+    assert_eq!(custom.model, "qwen2.5");
+}
+
 #[tokio::test]
 async fn registry_without_any_key_reports_no_providers() {
     let registry = Registry::new(&Settings::from_vars(&BTreeMap::new())).expect("registry builds");

@@ -4,7 +4,11 @@
   "identity": {
     "names": {
       "en": "Islam",
-      "ru": "Ислам"
+      "ru": "Ислам",
+      "uk": "Іслам",
+      "he": "אסלאם",
+      "de": "Islam",
+      "es": "Islam"
     },
     "tradition": "Islam, kept broad and without a specific denomination",
     "prayer_term": "du'a",

@@ -41,7 +41,9 @@ CONFESSION:
   plus one more when the entry is longer than 400 characters.
 
 PROVIDERS:
-  openrouter, gemini, groq, mistral, cloudflare, nvidia
+  openrouter, gemini, groq, mistral, cloudflare, nvidia, together, cerebras,
+  deepinfra, github-models, ollama (local, no key), custom (any OpenAI-compatible
+  gateway via CUSTOM_BASE_URL and CUSTOM_MODEL)
 
 RELIGIONS:
   See --list-religions; profiles live in resources/clergy/<id>/.";

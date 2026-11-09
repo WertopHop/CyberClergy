@@ -618,7 +618,7 @@
 .row__value {
   color: var(--fg);
   font-size: 12px;
-  text-align: right;
+  text-align: end;
 }
 
 .row__hint {

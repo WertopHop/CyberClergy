@@ -117,11 +117,12 @@ impl SecretStore {
         self.prefs.set_key(variable, value)
     }
 
-    /// Forgets every credential of a provider from both backends.
+    /// Forgets every setting of a provider from both backends, including the
+    /// model override, so "Forget" really resets the row.
     pub fn clear_provider(&mut self, id: ProviderId) -> Result<(), String> {
         let spec = ProviderSpec::from_id(id);
         let mut first_error = None;
-        for variable in std::iter::once(spec.api_key_var).chain(spec.required_vars.iter().copied()) {
+        for variable in provider_variables(spec) {
             if let Err(error) = delete_keychain(variable) {
                 first_error.get_or_insert(error);
             }
@@ -134,11 +135,17 @@ impl SecretStore {
     }
 }
 
-/// Every variable name a provider may need, in a stable order.
+/// Every variable name a provider may need, in a stable order. The model and
+/// base-URL overrides live here too, otherwise a value written to the keychain
+/// would never be read back into the settings snapshot.
 fn known_variables() -> impl Iterator<Item = &'static str> {
-    PROVIDER_SPECS.iter().flat_map(|spec| {
-        std::iter::once(spec.api_key_var).chain(spec.required_vars.iter().copied())
-    })
+    PROVIDER_SPECS.iter().flat_map(provider_variables)
+}
+
+fn provider_variables(spec: &'static ProviderSpec) -> impl Iterator<Item = &'static str> {
+    std::iter::once(spec.api_key_var)
+        .chain(spec.required_vars.iter().copied())
+        .chain([spec.model_var, spec.base_url_var])
 }
 
 /// Writes, reads back and removes a throwaway entry. Only a full round trip

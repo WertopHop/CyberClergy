@@ -49,6 +49,36 @@ export const PROVIDER_VARIANTS: Record<ProviderId, RobotVariant> = {
     accessory: "crest",
     glyph: "M -4.5 -3 L 4.5 0 L -4.5 3 Z",
   },
+  together: {
+    accent: "#c9a27a",
+    accessory: "crest",
+    glyph: "M -4.5 -3.5 H 4.5 L 0 3.5 Z",
+  },
+  cerebras: {
+    accent: "#b98f6a",
+    accessory: "halo",
+    glyph: "M 0 -4.5 L 4 -1 L 0 4.5 L -4 -1 Z",
+  },
+  deepinfra: {
+    accent: "#c7a98f",
+    accessory: "hood",
+    glyph: "M -4.5 3 L -4.5 -3 L 4.5 -3 M -4.5 0 H 3",
+  },
+  "github-models": {
+    accent: "#a7b391",
+    accessory: "scarf",
+    glyph: "M 0 -4.5 A 4.5 4.5 0 1 1 -3.2 1.9",
+  },
+  ollama: {
+    accent: "#adb79b",
+    accessory: "wings",
+    glyph: "M -4.5 2.5 A 4.5 4.5 0 0 1 4.5 2.5 Z",
+  },
+  custom: {
+    accent: "#d0b088",
+    accessory: "headset",
+    glyph: "M -4 0 H 4 M 0 -4 V 4 M -2.8 -2.8 L 2.8 2.8",
+  },
 };
 
 /** Used before the cleric is bound to a network, and for unknown ids. */

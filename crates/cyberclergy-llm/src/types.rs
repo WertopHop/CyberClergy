@@ -16,17 +16,33 @@ pub enum ProviderId {
     Mistral,
     Cloudflare,
     Nvidia,
+    Together,
+    Cerebras,
+    DeepInfra,
+    GithubModels,
+    /// A model running on this machine; needs no key and bills nothing.
+    Ollama,
+    /// Any OpenAI-compatible gateway the person points the app at.
+    Custom,
 }
 
 impl ProviderId {
     /// Every provider known to the crate, in the default rotation order.
-    pub const ALL: [ProviderId; 6] = [
+    /// Hosted free tiers first, then the local runtime, then the custom gateway,
+    /// so a fallback chain reaches a paying endpoint only when asked.
+    pub const ALL: [ProviderId; 12] = [
         ProviderId::OpenRouter,
         ProviderId::Gemini,
         ProviderId::Groq,
         ProviderId::Mistral,
         ProviderId::Cloudflare,
         ProviderId::Nvidia,
+        ProviderId::Together,
+        ProviderId::Cerebras,
+        ProviderId::DeepInfra,
+        ProviderId::GithubModels,
+        ProviderId::Ollama,
+        ProviderId::Custom,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -37,7 +53,18 @@ impl ProviderId {
             ProviderId::Mistral => "mistral",
             ProviderId::Cloudflare => "cloudflare",
             ProviderId::Nvidia => "nvidia",
+            ProviderId::Together => "together",
+            ProviderId::Cerebras => "cerebras",
+            ProviderId::DeepInfra => "deepinfra",
+            ProviderId::GithubModels => "github-models",
+            ProviderId::Ollama => "ollama",
+            ProviderId::Custom => "custom",
         }
+    }
+
+    /// True for a backend that runs on this machine: no quota is spent there.
+    pub fn is_local(self) -> bool {
+        matches!(self, ProviderId::Ollama)
     }
 }
 
@@ -76,6 +103,12 @@ impl FromStr for ProviderId {
             "mistral" | "mistralai" | "mistral-ai" => Ok(ProviderId::Mistral),
             "cloudflare" | "cloudflare-workers-ai" | "workers-ai" => Ok(ProviderId::Cloudflare),
             "nvidia" | "nim" | "nvidia-nim" => Ok(ProviderId::Nvidia),
+            "together" | "together-ai" | "togetherai" => Ok(ProviderId::Together),
+            "cerebras" | "cerebras-ai" => Ok(ProviderId::Cerebras),
+            "deepinfra" | "deep-infra" => Ok(ProviderId::DeepInfra),
+            "github" | "github-models" | "github_models" => Ok(ProviderId::GithubModels),
+            "ollama" | "local" => Ok(ProviderId::Ollama),
+            "custom" | "custom-openai" | "gateway" => Ok(ProviderId::Custom),
             _ => Err(ParseProviderIdError(value.to_string())),
         }
     }

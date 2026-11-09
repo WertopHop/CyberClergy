@@ -4,7 +4,7 @@
 // counted so far.
 import { useEffect, useState } from "react";
 
-import type { Translate } from "../i18n";
+import { LOCALES, type Translate } from "../i18n";
 import { checkProvider, clearProvider, prayerStats, saveProviderField } from "../lib/bridge";
 import { MAX_ROBOTS, providerLabel, providerName } from "../lib/providers";
 import type {
@@ -37,11 +37,17 @@ function fieldLabel(name: string, t: Translate): string {
   if (name.endsWith("_API_KEY")) {
     return t("fieldApiKey");
   }
-  if (name.endsWith("_API_TOKEN")) {
+  if (name.endsWith("_API_TOKEN") || name.endsWith("_TOKEN")) {
     return t("fieldToken");
   }
   if (name.endsWith("_ACCOUNT_ID")) {
     return t("fieldAccountId");
+  }
+  if (name.endsWith("_BASE_URL")) {
+    return t("fieldBaseUrl");
+  }
+  if (name.endsWith("_MODEL")) {
+    return t("fieldModel");
   }
   return name;
 }
@@ -133,6 +139,38 @@ function ProviderRow({
     }
   };
 
+  const saveModel = async () => {
+    setBusy(true);
+    try {
+      const updated = await saveProviderField(
+        provider.id,
+        provider.model_var,
+        drafts[provider.model_var] ?? "",
+      );
+      onProviders(updated);
+      updateDraft(provider.model_var, "");
+      setNotice(t("saved"));
+    } catch (error) {
+      setNotice(String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // An empty value removes the override, so the built-in default returns.
+  const resetModel = async () => {
+    setBusy(true);
+    try {
+      const updated = await saveProviderField(provider.id, provider.model_var, "");
+      onProviders(updated);
+      setNotice(null);
+    } catch (error) {
+      setNotice(String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const check = async () => {
     setBusy(true);
     setNotice(t("checking"));
@@ -170,8 +208,55 @@ function ProviderRow({
       {expanded ? (
         <div className="provider__body">
           <p className="provider__model">
-            {t("modelLine", { model: provider.model })}
+            {provider.model && provider.model !== provider.default_model
+              ? t("modelCustom", {
+                  model: provider.model,
+                  default: provider.default_model,
+                })
+              : t("modelLine", {
+                  model: provider.model || provider.default_model || "—",
+                })}
           </p>
+
+          <label className="field">
+            <span className="field__label">{t("fieldModel")}</span>
+            <span className="field__row">
+              <input
+                className="field__input"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={drafts[provider.model_var] ?? ""}
+                placeholder={provider.default_model || t("modelPlaceholder")}
+                onChange={(event) =>
+                  updateDraft(provider.model_var, event.target.value)
+                }
+              />
+              <button
+                type="button"
+                className="button button--small"
+                disabled={busy || !(drafts[provider.model_var] ?? "").trim()}
+                onClick={() => void saveModel()}
+              >
+                {t("save")}
+              </button>
+            </span>
+          </label>
+          <div className="provider__actions">
+            {provider.model !== provider.default_model ? (
+              <button
+                type="button"
+                className="button button--small button--ghost"
+                disabled={busy}
+                onClick={() => void resetModel()}
+              >
+                {t("modelReset")}
+              </button>
+            ) : null}
+            <span className="provider__notice">
+              {t("modelDefault", { model: provider.default_model || "—" })}
+            </span>
+          </div>
 
           {provider.fields.map((field) => {
             const draft = drafts[field.name] ?? "";
@@ -183,7 +268,7 @@ function ProviderRow({
                 <span className="field__row">
                   <input
                     className="field__input"
-                    type="password"
+                    type={field.secret ? "password" : "text"}
                     autoComplete="off"
                     spellCheck={false}
                     value={draft}
@@ -442,7 +527,9 @@ export function SettingsPanel({
               <span className="row__value">
                 {t("settingsRosterCount", {
                   count: roster.length,
-                  max: MAX_ROBOTS,
+                  // Count networks, not cloud capacity: "1 of 6" answers the
+                  // question the person is actually asking.
+                  max: providers.length,
                 })}
               </span>
             </div>
@@ -463,14 +550,19 @@ export function SettingsPanel({
             </div>
             <div className="row">
               <span className="row__label">{t("language")}</span>
-              <Segmented
+              <select
+                className="select"
                 value={preferences.language}
-                options={[
-                  { value: "ru", label: t("languageRussian") },
-                  { value: "en", label: t("languageEnglish") },
-                ]}
-                onChange={(language) => onChange({ language })}
-              />
+                onChange={(event) =>
+                  onChange({ language: event.target.value })
+                }
+              >
+                {LOCALES.map((locale) => (
+                  <option key={locale.code} value={locale.code}>
+                    {locale.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </section>
 

@@ -1,0 +1,27 @@
+{
+  "id": "buddhism",
+  "version": 1,
+  "identity": {
+    "names": {
+      "en": "Buddhism",
+      "ru": "Буддизм",
+      "uk": "Буддизм",
+      "he": "בודהיזם",
+      "de": "Buddhismus",
+      "es": "Budismo"
+    },
+    "tradition": "Buddhism, kept broad and without a specific school",
+    "prayer_term": "prayer",
+    "closing_formula": "May all beings be free from suffering"
+  },
+  "style": {
+    "tone": "calm, compassionate and mindful",
+    "length": "one or two short paragraphs of roughly 120 to 200 words",
+    "short_length": "one short paragraph of roughly 40 to 60 words"
+  },
+  "batch": 3,
+  "schedule": {
+    "interval_seconds": 900,
+    "min_interval_seconds": 300
+  }
+}

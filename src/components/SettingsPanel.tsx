@@ -5,7 +5,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { LOCALES, type Translate } from "../i18n";
-import { checkProvider, clearProvider, prayerStats, saveProviderField } from "../lib/bridge";
+import {
+  checkProvider,
+  clearProvider,
+  createReligion,
+  prayerStats,
+  saveProviderField,
+} from "../lib/bridge";
 import { MAX_ROBOTS, providerLabel, providerName } from "../lib/providers";
 import type {
   ChapelStatus,
@@ -30,6 +36,7 @@ interface SettingsPanelProps {
   religions: ReligionProfile[];
   status: ChapelStatus | null;
   onProviders: (providers: ProviderView[]) => void;
+  onReligions: (religions: ReligionProfile[]) => void;
 }
 
 function baseFieldLabel(name: string, t: Translate): string {
@@ -449,6 +456,7 @@ export function SettingsPanel({
   religions,
   status,
   onProviders,
+  onReligions,
 }: SettingsPanelProps) {
   const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(
     null,
@@ -459,6 +467,10 @@ export function SettingsPanel({
     networks: true,
     roster: false,
   });
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draft, setDraft] = useState({ title: "", description: "", tone: "" });
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
 
   const toggleGroup = (name: string) =>
     setOpenGroups((current) => ({ ...current, [name]: !current[name] }));
@@ -484,6 +496,32 @@ export function SettingsPanel({
           Math.max(roster.length, 1),
       ),
     );
+
+  // Asks a network to shape the draft into a tradition, then makes it the one
+  // the chapel prays. The backend re-validates everything before it is saved.
+  const processDraft = async () => {
+    setDraftBusy(true);
+    setDraftNotice(null);
+    try {
+      const before = new Set(religions.map((entry) => entry.id));
+      const updated = await createReligion({
+        ...draft,
+        language: preferences.language,
+      });
+      const fresh = updated.find((entry) => !before.has(entry.id));
+      onReligions(updated);
+      if (fresh) {
+        onChange({ religion: fresh.id });
+      }
+      setDraft({ title: "", description: "", tone: "" });
+      setDraftOpen(false);
+      setDraftNotice(t("religionCustomCreated"));
+    } catch (error) {
+      setDraftNotice(String(error));
+    } finally {
+      setDraftBusy(false);
+    }
+  };
 
   return (
     <>
@@ -674,6 +712,95 @@ export function SettingsPanel({
               }
             />
             <p className="row__hint">{t("paceHint")}</p>
+
+            <div className="row">
+              <span className="row__label">{t("religionCustom")}</span>
+              <button
+                type="button"
+                className="button button--small"
+                onClick={() => setDraftOpen((current) => !current)}
+                aria-expanded={draftOpen}
+              >
+                {draftOpen ? t("religionCustomClose") : t("religionCustomOpen")}
+              </button>
+            </div>
+            {draftOpen ? (
+              <div className="religion-draft">
+                <label className="field">
+                  <span className="field__label">
+                    {t("religionCustomName")}
+                  </span>
+                  <input
+                    className="field__input"
+                    type="text"
+                    maxLength={60}
+                    value={draft.title}
+                    placeholder={t("religionCustomNamePlaceholder")}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        title: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">
+                    {t("religionCustomAbout")}
+                  </span>
+                  <textarea
+                    className="field__input field__input--area"
+                    maxLength={1500}
+                    value={draft.description}
+                    placeholder={t("religionCustomAboutPlaceholder")}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">
+                    {t("religionCustomTone")}
+                  </span>
+                  <input
+                    className="field__input"
+                    type="text"
+                    maxLength={80}
+                    value={draft.tone}
+                    placeholder={t("religionCustomTonePlaceholder")}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        tone: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <div className="provider__actions">
+                  <button
+                    type="button"
+                    className="button button--small button--primary"
+                    disabled={
+                      draftBusy ||
+                      draft.title.trim().length < 2 ||
+                      draft.description.trim().length < 10
+                    }
+                    onClick={() => void processDraft()}
+                  >
+                    {draftBusy
+                      ? t("religionCustomWorking")
+                      : t("religionCustomProcess")}
+                  </button>
+                  {draftNotice ? (
+                    <span className="provider__notice">{draftNotice}</span>
+                  ) : null}
+                </div>
+                <p className="row__hint">{t("religionCustomHint")}</p>
+              </div>
+            ) : null}
           </section>
 
           <StatsGroup t={t} open={open} />

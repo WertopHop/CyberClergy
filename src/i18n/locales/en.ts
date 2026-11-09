@@ -100,6 +100,21 @@ export const en = {
   paceSeconds: "a prayer every {secs} s",
   paceHint:
     "How often a prayer appears on the cloud. Move the slider to choose the rhythm in seconds.",
+  religionCustom: "Own tradition",
+  religionCustomOpen: "Add your own",
+  religionCustomClose: "Hide the form",
+  religionCustomName: "Name",
+  religionCustomNamePlaceholder: "For example: Shinto",
+  religionCustomAbout: "What is this tradition about?",
+  religionCustomAboutPlaceholder:
+    "Who is addressed, what matters, what it aims for. Your own words are enough.",
+  religionCustomTone: "Tone of the prayer",
+  religionCustomTonePlaceholder: "Quiet, warm, solemn…",
+  religionCustomProcess: "Shape it",
+  religionCustomWorking: "The model is shaping it…",
+  religionCustomHint:
+    "The name and the description are sent to one of the configured networks. The answer is checked before the tradition joins the list.",
+  religionCustomCreated: "Tradition added",
 
   statsLastDay: "prayers / 24 h",
   statsTotal: "prayers in total",

@@ -48,6 +48,18 @@ const BUILTIN_PROFILES: &[BuiltinProfile] = &[
         addendum: include_str!("../../resources/clergy/islam/prompt_addendum.md"),
         offline: include_str!("../../resources/clergy/islam/offline.json"),
     },
+    BuiltinProfile {
+        id: "hinduism",
+        json: include_str!("../../resources/clergy/hinduism/profile.json"),
+        addendum: include_str!("../../resources/clergy/hinduism/prompt_addendum.md"),
+        offline: include_str!("../../resources/clergy/hinduism/offline.json"),
+    },
+    BuiltinProfile {
+        id: "buddhism",
+        json: include_str!("../../resources/clergy/buddhism/profile.json"),
+        addendum: include_str!("../../resources/clergy/buddhism/prompt_addendum.md"),
+        offline: include_str!("../../resources/clergy/buddhism/offline.json"),
+    },
 ];
 
 /// Everything the application knows about one religion.

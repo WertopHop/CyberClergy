@@ -99,6 +99,21 @@ export const ru: Dictionary = {
   paceSeconds: "молитва каждые {secs} с",
   paceHint:
     "Как часто на облаке появляется молитва. Двиньте ползунок, чтобы выбрать ритм в секундах.",
+  religionCustom: "Своя традиция",
+  religionCustomOpen: "Добавить свою",
+  religionCustomClose: "Свернуть форму",
+  religionCustomName: "Название",
+  religionCustomNamePlaceholder: "Например: синтоизм",
+  religionCustomAbout: "О чём эта традиция?",
+  religionCustomAboutPlaceholder:
+    "К кому обращаются, что важно, к чему стремятся. Своими словами — этого достаточно.",
+  religionCustomTone: "Тон молитвы",
+  religionCustomTonePlaceholder: "Тихо, тепло, строго…",
+  religionCustomProcess: "Обработать",
+  religionCustomWorking: "Модель обрабатывает…",
+  religionCustomHint:
+    "Название и описание уходят в одну из настроенных сетей. Ответ проверяется, прежде чем традиция попадёт в список.",
+  religionCustomCreated: "Традиция добавлена",
 
   statsLastDay: "молитв за 24 часа",
   statsTotal: "молитв всего",

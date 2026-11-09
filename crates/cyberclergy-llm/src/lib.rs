@@ -21,6 +21,7 @@ pub mod redact;
 pub mod types;
 
 pub use batch::{split_prayers, DEFAULT_PROFILE_BATCH, MAX_BATCH, SEPARATOR};
+pub use clergy::custom_religion::{parse_answer, ReligionDraft, MAX_DESCRIPTION_CHARS, MAX_TITLE_CHARS};
 pub use clergy::intercession::{target_for, MAX_REPEAT, MAX_TEXT_CHARS};
 pub use clergy::scheduler::{DEFAULT_BUDGET_PER_HOUR, OFFLINE_AFTER_FAILURES};
 pub use clergy::{
@@ -35,7 +36,8 @@ pub use config::{
 pub use errors::LlmError;
 pub use generate::{build_prayer_request, PrayerGenerator, USER_INSTRUCTION};
 pub use prompts::{
-    PrayerSpec, PromptContext, PromptError, PromptTemplate, SYSTEM_PROMPT_TEMPLATE,
+    PrayerSpec, PromptContext, PromptError, PromptTemplate, RELIGION_PROFILE_TEMPLATE,
+    SYSTEM_PROMPT_TEMPLATE,
 };
 pub use provider::{Provider, Registry};
 pub use types::{ChatMessage, ChatRequest, ChatResponse, ProviderId, Role, Usage};

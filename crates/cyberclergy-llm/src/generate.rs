@@ -100,6 +100,12 @@ impl PrayerGenerator {
         }
     }
 
+    /// Sends an arbitrary request through the shared rotation. Used by the
+    /// religion builder, which needs a structured answer rather than a prayer.
+    pub async fn complete(&self, request: &ChatRequest) -> Result<ChatResponse, LlmError> {
+        self.registry.chat_with_fallback(request).await
+    }
+
     /// Composes one prayer through a specific provider.
     pub async fn generate_with_provider(
         &self,

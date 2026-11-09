@@ -106,6 +106,21 @@ export const de: Dictionary = {
   paceSeconds: "ein Gebet alle {secs} s",
   paceHint:
     "Wie oft ein Gebet auf der Wolke erscheint. Schiebe den Regler, um den Rhythmus in Sekunden zu wählen.",
+  religionCustom: "Eigene Tradition",
+  religionCustomOpen: "Eigene hinzufügen",
+  religionCustomClose: "Formular einklappen",
+  religionCustomName: "Name",
+  religionCustomNamePlaceholder: "Zum Beispiel: Shinto",
+  religionCustomAbout: "Worum geht es in dieser Tradition?",
+  religionCustomAboutPlaceholder:
+    "Wer angesprochen wird, was wichtig ist, worauf sie zielt. Deine eigenen Worte genügen.",
+  religionCustomTone: "Ton des Gebets",
+  religionCustomTonePlaceholder: "Still, warm, feierlich…",
+  religionCustomProcess: "Ausarbeiten",
+  religionCustomWorking: "Das Modell arbeitet…",
+  religionCustomHint:
+    "Name und Beschreibung gehen an eines der eingerichteten Netzwerke. Die Antwort wird geprüft, bevor die Tradition in die Liste kommt.",
+  religionCustomCreated: "Tradition hinzugefügt",
 
   statsLastDay: "Gebete / 24 h",
   statsTotal: "Gebete insgesamt",

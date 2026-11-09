@@ -106,6 +106,21 @@ export const es: Dictionary = {
   paceSeconds: "una oración cada {secs} s",
   paceHint:
     "Con qué frecuencia aparece una oración en la nube. Mueve el control para elegir el ritmo en segundos.",
+  religionCustom: "Tradición propia",
+  religionCustomOpen: "Añadir la tuya",
+  religionCustomClose: "Ocultar el formulario",
+  religionCustomName: "Nombre",
+  religionCustomNamePlaceholder: "Por ejemplo: sintoísmo",
+  religionCustomAbout: "¿De qué trata esta tradición?",
+  religionCustomAboutPlaceholder:
+    "A quién se dirige, qué importa, qué busca. Tus propias palabras bastan.",
+  religionCustomTone: "Tono de la oración",
+  religionCustomTonePlaceholder: "Sereno, cálido, solemne…",
+  religionCustomProcess: "Procesar",
+  religionCustomWorking: "El modelo está procesando…",
+  religionCustomHint:
+    "El nombre y la descripción se envían a una de las redes configuradas. La respuesta se revisa antes de que la tradición entre en la lista.",
+  religionCustomCreated: "Tradición añadida",
 
   statsLastDay: "oraciones / 24 h",
   statsTotal: "oraciones en total",

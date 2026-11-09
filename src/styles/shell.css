@@ -487,6 +487,21 @@
   transform: rotate(180deg);
 }
 
+/* The "own tradition" form sits under the religion picker. */
+.religion-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.field__input--area {
+  min-height: 84px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+}
+
 /* Rhythm slider: a plain control the platform can style. */
 .slider {
   width: 100%;

@@ -154,6 +154,7 @@ export default function App() {
           religions={religions}
           status={chapel.status}
           onProviders={setProviders}
+          onReligions={setReligions}
         />
       </div>
     </div>

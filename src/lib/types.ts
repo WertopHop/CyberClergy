@@ -71,6 +71,16 @@ export interface CheckOutcome {
   elapsed_ms: number;
 }
 
+/** What the "new tradition" form sends off to be shaped by a model. */
+export interface ReligionDraft {
+  title: string;
+  description: string;
+  /** Wish about the tone; empty lets the model choose one. */
+  tone: string;
+  /** Interface language of the person. */
+  language: string;
+}
+
 export interface ReligionProfile {
   id: string;
   version: number;

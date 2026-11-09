@@ -30,6 +30,7 @@ import type {
   ProviderField,
   ProviderId,
   ProviderView,
+  ReligionDraft,
   ReligionProfile,
 } from "./types";
 
@@ -249,11 +250,53 @@ export async function listProviders(): Promise<ProviderView[]> {
   }));
 }
 
+/** Traditions created in the preview, so the form has somewhere to land. */
+let demoReligions: ReligionProfile[] = DEMO_RELIGIONS.map((religion) => ({
+  ...religion,
+}));
+
 export async function listReligions(): Promise<ReligionProfile[]> {
   if (isDesktop) {
     return invoke<ReligionProfile[]>("list_religions");
   }
-  return DEMO_RELIGIONS;
+  return demoReligions;
+}
+
+export async function createReligion(
+  draft: ReligionDraft,
+): Promise<ReligionProfile[]> {
+  if (isDesktop) {
+    return invoke<ReligionProfile[]>("create_religion", { draft });
+  }
+  await wait(900);
+  const base =
+    draft.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "tradition";
+  const taken = new Set(demoReligions.map((religion) => religion.id));
+  let id = base;
+  for (let index = 2; taken.has(id); index += 1) {
+    id = `${base}-${index}`;
+  }
+  const profile: ReligionProfile = {
+    id,
+    version: 1,
+    identity: {
+      names: { en: draft.title, ru: draft.title },
+      tradition: draft.description.slice(0, 200),
+      prayer_term: "prayer",
+      closing_formula: null,
+    },
+    style: {
+      tone: draft.tone || "reverent and warm",
+      length: "one short paragraph",
+      short_length: "one short paragraph",
+    },
+    schedule: { interval_seconds: 900, min_interval_seconds: 300 },
+  };
+  demoReligions = [...demoReligions, profile];
+  return demoReligions;
 }
 
 /** Preview mirror of the shell's custom gateways: each filled one reveals the

@@ -1,0 +1,7 @@
+- This tradition is Hinduism, a wide family of paths; the act of prayer is called prarthana.
+- Address the Divine the way the person's own heart would: as a loving presence, or through a gentle form such as a mother, a friend or the light of dawn. Never choose a deity for the person.
+- Speak of dharma, patience, gratitude, compassion, peace of mind and the welfare of family and of all living beings.
+- Never quote scriptures or mantras, and never present invented words as a verse.
+- Avoid claims about caste, ritual purity, astrology, gurus or the authority of any particular lineage.
+- Prefer trust, surrender and steady practice over promises of specific outcomes.
+- A gentle closing such as "Om Shanti" is appropriate.

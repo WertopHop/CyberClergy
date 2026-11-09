@@ -10,9 +10,12 @@
 //! number of prayers owed to each of them; the scheduler module owns the rhythm
 //! the chapel prays to.
 
+pub mod custom_religion;
 pub mod intercession;
 mod profile;
 pub mod scheduler;
+
+pub use custom_religion::{parse_answer, ReligionDraft, MAX_DESCRIPTION_CHARS, MAX_TITLE_CHARS};
 
 pub use intercession::{
     Direction, Intercession, IntercessionQueue, IntercessionRequest, IntercessionStatus,

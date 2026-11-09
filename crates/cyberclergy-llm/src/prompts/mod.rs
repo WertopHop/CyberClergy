@@ -13,6 +13,11 @@ use std::fmt;
 pub const SYSTEM_PROMPT_TEMPLATE: &str =
     include_str!("../../resources/prompts/system_prompt.md");
 
+/// The prompt that turns a person's description of a tradition into a profile.
+/// Kept apart from the prayer prompt: this one asks for a document, not a prayer.
+pub const RELIGION_PROFILE_TEMPLATE: &str =
+    include_str!("../../resources/prompts/religion_profile.md");
+
 pub const KEY_TRADITION: &str = "tradition";
 pub const KEY_BATCH: &str = "batch";
 pub const KEY_LANGUAGE: &str = "language";
@@ -120,6 +125,11 @@ impl PromptTemplate {
     /// The embedded system prompt that all providers share.
     pub fn system_prompt() -> Self {
         Self::new("system_prompt", SYSTEM_PROMPT_TEMPLATE)
+    }
+
+    /// The embedded prompt the religion builder renders a draft with.
+    pub fn religion_profile() -> Self {
+        Self::new("religion_profile", RELIGION_PROFILE_TEMPLATE)
     }
 
     pub fn name(&self) -> &str {

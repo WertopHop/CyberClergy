@@ -101,6 +101,21 @@ export const he: Dictionary = {
   paceSeconds: "תפילה כל {secs} שנ׳",
   paceHint:
     "באיזו תדירות מופיעה תפילה על הענן. הזז את המחוון כדי לבחור קצב בשניות.",
+  religionCustom: "מסורת אישית",
+  religionCustomOpen: "הוספת מסורת משלך",
+  religionCustomClose: "כיווץ הטופס",
+  religionCustomName: "שם",
+  religionCustomNamePlaceholder: "למשל: שינטו",
+  religionCustomAbout: "על מה המסורת הזאת?",
+  religionCustomAboutPlaceholder:
+    "למי פונים, מה חשוב, למה שואפים. מילים משלך מספיקות.",
+  religionCustomTone: "טון התפילה",
+  religionCustomTonePlaceholder: "שקט, חם, חגיגי…",
+  religionCustomProcess: "עיבוד",
+  religionCustomWorking: "המודל מעבד…",
+  religionCustomHint:
+    "השם והתיאור נשלחים לאחת הרשתות המוגדרות. התשובה נבדקת לפני שהמסורת נכנסת לרשימה.",
+  religionCustomCreated: "המסורת נוספה",
 
   statsLastDay: "תפילות ב־24 שעות",
   statsTotal: "תפילות בסך הכול",

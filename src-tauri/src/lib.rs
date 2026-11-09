@@ -17,6 +17,7 @@
 mod confessions;
 mod history;
 mod prefs;
+mod religions;
 mod scheduler;
 mod secrets;
 
@@ -25,9 +26,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use cyberclergy_llm::{
-    custom_slot_of, custom_vars, ChatRequest, Health, Intercession, IntercessionRequest, Policy,
-    PrayerGenerator, ProfileCatalog, ProviderId, ProviderSpec, Registry, ReligionProfile, Settings,
-    MAX_CUSTOM_GATEWAYS, PROVIDER_SPECS,
+    custom_slot_of, custom_vars, parse_answer, ChatRequest, Health, Intercession,
+    IntercessionRequest, Policy, PrayerGenerator, ProfileCatalog, PromptTemplate, ProviderId,
+    ProviderSpec, Registry, ReligionDraft, ReligionProfile, Settings, MAX_CUSTOM_GATEWAYS,
+    PROVIDER_SPECS,
 };
 use serde::Serialize;
 use tauri::{Manager, State};
@@ -47,6 +49,8 @@ pub struct AppState {
     secrets: SecretStore,
     /// Snapshot rebuilt whenever a credential changes.
     settings: Settings,
+    /// Where traditions the person created are kept.
+    profiles_dir: std::path::PathBuf,
     /// `None` when no provider is configured or the HTTP client could not be
     /// built; the UI still needs provider statuses in that case.
     generator: Option<Arc<PrayerGenerator>>,
@@ -88,18 +92,15 @@ impl AppState {
         confessions: ConfessionStore,
         history: History,
         policy: Policy,
+        profiles_dir: std::path::PathBuf,
     ) -> Self {
-        let profiles = match ProfileCatalog::embedded() {
-            Ok(catalog) => catalog,
-            Err(error) => {
-                eprintln!("embedded religion profiles are invalid: {error}");
-                ProfileCatalog::default()
-            }
-        };
+        // Embedded traditions first, then whatever the person created.
+        let profiles = religions::load(&profiles_dir);
 
         let mut state = Self {
             secrets,
             settings: Settings::from_vars(&BTreeMap::new()),
+            profiles_dir,
             generator: None,
             profiles,
             confessions,
@@ -543,6 +544,51 @@ async fn generate_prayer(
     })
 }
 
+/// Turns a person's description of a tradition into a profile and makes that
+/// tradition the one the chapel prays.
+///
+/// The model only proposes the document; [`parse_answer`] cleans it, and the
+/// profile is validated again before it is written, so a bad answer costs one
+/// request and nothing else.
+#[tauri::command]
+async fn create_religion(
+    state: State<'_, Shared>,
+    draft: ReligionDraft,
+) -> Result<Vec<ReligionProfile>, String> {
+    draft.validate()?;
+
+    let (generator, taken) = {
+        let state = state.lock().map_err(|_| state_error())?;
+        let generator = state.generator.clone().ok_or_else(|| {
+            "configure at least one network first: a tradition is shaped by a model"
+                .to_string()
+        })?;
+        let taken: Vec<String> = state
+            .profiles
+            .ids()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        (generator, taken)
+    };
+
+    let request = draft.request(&PromptTemplate::religion_profile())?;
+    let response = generator
+        .complete(&request)
+        .await
+        .map_err(|error| error.to_string())?;
+    let taken: Vec<&str> = taken.iter().map(String::as_str).collect();
+    let profile = parse_answer(&response.text, &draft, &taken)?;
+
+    let mut state = state.lock().map_err(|_| state_error())?;
+    religions::save(&state.profiles_dir, &profile)?;
+    state.profiles = religions::load(&state.profiles_dir);
+    let mut preferences = state.preferences();
+    preferences.religion = profile.id.clone();
+    state.set_preferences(preferences)?;
+    Ok(state.profiles.list().into_iter().cloned().collect())
+}
+
 #[tauri::command]
 fn list_confessions(state: State<'_, Shared>) -> Result<Vec<Intercession>, String> {
     let state = state.lock().map_err(|_| state_error())?;
@@ -651,12 +697,12 @@ pub fn run() {
                 eprintln!("cannot open the prayer journal: {error}; keeping it in memory");
                 History::in_memory().expect("the in-memory journal always opens")
             });
-
             let state: Shared = Arc::new(Mutex::new(AppState::new(
                 secrets,
                 confessions,
                 history,
                 scheduler::policy_from_env(),
+                religions::directory(&config_dir),
             )));
             app.manage(state.clone());
             scheduler::spawn(app.handle().clone(), state);
@@ -671,6 +717,7 @@ pub fn run() {
             clear_provider,
             check_provider,
             generate_prayer,
+            create_religion,
             list_confessions,
             submit_confession,
             cancel_confession,

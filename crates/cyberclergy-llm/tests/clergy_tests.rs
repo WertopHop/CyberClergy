@@ -58,10 +58,10 @@ fn embedded_catalog_contains_the_three_initial_religions() {
 
     assert_eq!(
         catalog.ids(),
-        vec!["christianity", "islam", "judaism"],
-        "the initial set is Judaism, Christianity and Islam"
+        vec!["buddhism", "christianity", "hinduism", "islam", "judaism"],
+        "the Abrahamic traditions plus Buddhism and Hinduism"
     );
-    assert_eq!(catalog.len(), 3);
+    assert_eq!(catalog.len(), 5);
 }
 
 #[test]
@@ -85,6 +85,24 @@ fn builtin_profiles_are_localised_and_valid() {
     let islam = catalog.get("islam").expect("islam is embedded");
     assert_eq!(islam.identity.prayer_term, "du'a");
     assert!(islam.addendum.contains("du'a"));
+
+    let hinduism = catalog.get("hinduism").expect("hinduism is embedded");
+    assert_eq!(hinduism.localized_name("ru"), "Индуизм");
+    assert_eq!(hinduism.identity.prayer_term, "prarthana");
+    assert!(hinduism.addendum.contains("prarthana"));
+    assert!(hinduism.quiet_prayer("ru", 0).is_some());
+
+    let buddhism = catalog.get("buddhism").expect("buddhism is embedded");
+    assert_eq!(buddhism.localized_name("he"), "בודהיזם");
+    assert_eq!(
+        buddhism.identity.closing_formula.as_deref(),
+        Some("May all beings be free from suffering")
+    );
+    // A tradition without a translated canon still prays, in English.
+    assert_eq!(
+        buddhism.quiet_prayer("de", 0),
+        buddhism.quiet_prayer("en", 0)
+    );
 
     for profile in catalog.list() {
         profile
@@ -242,7 +260,7 @@ fn user_directory_replaces_and_adds_profiles() {
         .with_overrides(&directory)
         .expect("overrides load");
 
-    assert_eq!(catalog.len(), 4);
+    assert_eq!(catalog.len(), 6);
     let judaism = catalog.get("judaism").expect("judaism still exists");
     assert_eq!(judaism.localized_name("en"), "Custom Judaism");
     assert_eq!(judaism.version, 2);

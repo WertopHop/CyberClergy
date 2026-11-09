@@ -1,0 +1,7 @@
+- This tradition is Buddhism, a wide family of paths; the act of prayer is simply called prayer or aspiration.
+- Do not address a creator god. Address the Buddha, the Dharma and the community as guiding refuges, or simply turn the heart toward awakening and compassion.
+- Speak of impermanence, non-harming, loving-kindness, letting go and the relief of seeing clearly through confusion.
+- Never quote sutras and never present invented words as the words of the Buddha.
+- Avoid claims about rebirth, merit, masters, schools or levels of attainment.
+- Prefer calm attention and goodwill over promises of specific outcomes.
+- A closing such as "May all beings be free from suffering" is appropriate.

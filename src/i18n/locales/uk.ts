@@ -101,6 +101,21 @@ export const uk: Dictionary = {
   paceSeconds: "молитва кожні {secs} с",
   paceHint:
     "Як часто на хмарі з'являється молитва. Посуньте повзунок, щоб вибрати ритм у секундах.",
+  religionCustom: "Власна традиція",
+  religionCustomOpen: "Додати свою",
+  religionCustomClose: "Згорнути форму",
+  religionCustomName: "Назва",
+  religionCustomNamePlaceholder: "Наприклад: синтоїзм",
+  religionCustomAbout: "Про що ця традиція?",
+  religionCustomAboutPlaceholder:
+    "До кого звертаються, що важливо, до чого прагнуть. Своїми словами — цього достатньо.",
+  religionCustomTone: "Тон молитви",
+  religionCustomTonePlaceholder: "Тихо, тепло, суворо…",
+  religionCustomProcess: "Обробити",
+  religionCustomWorking: "Модель обробляє…",
+  religionCustomHint:
+    "Назва й опис надсилаються до однієї з налаштованих мереж. Відповідь перевіряється, перш ніж традиція потрапить до списку.",
+  religionCustomCreated: "Традицію додано",
 
   statsLastDay: "молитов за 24 години",
   statsTotal: "молитов усього",

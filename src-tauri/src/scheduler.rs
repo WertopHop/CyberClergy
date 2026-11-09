@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use cyberclergy_llm::{
     split_prayers, Cadence, ChatResponse, IntercessionTask, LlmError, Meter, Policy,
-    PrayerGenerator, PrayerSpec, ProviderId, DEFAULT_BUDGET_PER_HOUR,
+    PrayerGenerator, PrayerSpec, ProviderId, ReligionProfile, DEFAULT_BUDGET_PER_HOUR,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -28,7 +28,25 @@ use tokio::sync::Notify;
 use tokio::task::JoinSet;
 
 use crate::history::{now_millis, now_secs, PrayerRecord, PrayerSource};
+use crate::prefs::Preferences;
 use crate::AppState;
+
+/// The rhythm in force: the person's own interval when they set one, otherwise
+/// the tradition's interval modulated by the older pace setting.
+pub fn cadence_for(
+    preferences: &Preferences,
+    profile: &ReligionProfile,
+    clerics: usize,
+) -> Cadence {
+    match preferences.interval_secs {
+        Some(secs) => Cadence::every(secs, clerics),
+        None => Cadence::new(
+            preferences.pace(),
+            profile.schedule.interval_seconds,
+            profile.schedule.min_interval_seconds,
+        ),
+    }
+}
 
 pub const EVENT_PRAYER: &str = "chapel://prayer";
 pub const EVENT_STATUS: &str = "chapel://status";
@@ -303,11 +321,7 @@ fn plan(shared: &Arc<Mutex<AppState>>, busy: &BTreeSet<usize>) -> Option<Job> {
         Some(task) => (task.cleric, Some(task)),
         None => (next_due_slot(&state.schedule, busy, now)?, None),
     };
-    let cadence = Cadence::new(
-        preferences.pace(),
-        profile.schedule.interval_seconds,
-        profile.schedule.min_interval_seconds,
-    );
+    let cadence = cadence_for(&preferences, &profile, roster.len());
     let multiplier = state.health.gap_multiplier();
     if let Some(due) = state.schedule.get_mut(cleric) {
         *due = cadence.next_due(now, multiplier);

@@ -9,7 +9,7 @@
 //! `Debug` output, and malformed numeric settings degrade to defaults with a
 //! warning instead of blocking application startup.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fmt;
 use std::str::FromStr;
@@ -70,6 +70,48 @@ pub const VAR_OLLAMA_MODEL: &str = "OLLAMA_MODEL";
 pub const VAR_CUSTOM_API_KEY: &str = "CUSTOM_API_KEY";
 pub const VAR_CUSTOM_BASE_URL: &str = "CUSTOM_BASE_URL";
 pub const VAR_CUSTOM_MODEL: &str = "CUSTOM_MODEL";
+
+/// How many additional custom gateways the numbered `CUSTOM_<n>_*` variables
+/// can describe. They all stand behind the single `custom` network, which
+/// rotates between them.
+pub const MAX_CUSTOM_GATEWAYS: u8 = 6;
+
+/// The three variables of one custom gateway, in `key, base URL, model` order.
+/// The first gateway keeps the unsuffixed names written by earlier versions.
+pub fn custom_vars(slot: u8) -> [String; 3] {
+    if slot <= 1 {
+        [
+            VAR_CUSTOM_API_KEY.to_string(),
+            VAR_CUSTOM_BASE_URL.to_string(),
+            VAR_CUSTOM_MODEL.to_string(),
+        ]
+    } else {
+        [
+            format!("CUSTOM_{slot}_API_KEY"),
+            format!("CUSTOM_{slot}_BASE_URL"),
+            format!("CUSTOM_{slot}_MODEL"),
+        ]
+    }
+}
+
+/// Recognises any custom-gateway variable and returns the slot it belongs to.
+pub fn custom_slot_of(variable: &str) -> Option<u8> {
+    if matches!(
+        variable,
+        VAR_CUSTOM_API_KEY | VAR_CUSTOM_BASE_URL | VAR_CUSTOM_MODEL
+    ) {
+        return Some(1);
+    }
+    let rest = variable.strip_prefix("CUSTOM_")?;
+    let (index, field) = rest.split_once('_')?;
+    if !matches!(field, "API_KEY" | "BASE_URL" | "MODEL") {
+        return None;
+    }
+    index
+        .parse::<u8>()
+        .ok()
+        .filter(|slot| (2..=MAX_CUSTOM_GATEWAYS).contains(slot))
+}
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_MAX_RETRIES: u32 = 2;
@@ -365,6 +407,11 @@ pub struct SharedSettings {
 #[derive(Debug, Clone)]
 pub struct Settings {
     providers: BTreeMap<ProviderId, ProviderConfig>,
+    /// Custom gateways that name both a base URL and a model, slot 1 first.
+    custom: Vec<ProviderConfig>,
+    /// Names of the variables that were provided, deliberately without values so
+    /// that a debug print or a status report can never leak a secret.
+    present: BTreeSet<String>,
     pub shared: SharedSettings,
 }
 
@@ -429,11 +476,27 @@ impl Settings {
             provider_order: provider_order_var(vars),
         };
 
-        Self { providers, shared }
+        Self {
+            providers,
+            custom: custom_gateways(vars),
+            present: vars.keys().cloned().collect(),
+            shared,
+        }
     }
 
     pub fn provider(&self, id: ProviderId) -> Option<&ProviderConfig> {
         self.providers.get(&id)
+    }
+
+    /// Custom gateways that are ready to answer, slot 1 first.
+    pub fn custom(&self) -> &[ProviderConfig] {
+        &self.custom
+    }
+
+    /// True when the variable was provided by the environment or the settings
+    /// screen. Only the name is kept, never the value.
+    pub fn has_var(&self, name: &str) -> bool {
+        self.present.contains(name)
     }
 
     /// All providers in the canonical `ProviderId::ALL` order.
@@ -454,6 +517,48 @@ impl Settings {
             })
             .collect()
     }
+}
+
+/// Collects every custom gateway that names a base URL and a model. A gateway
+/// that is only half-written is left out rather than registered broken.
+fn custom_gateways(vars: &BTreeMap<String, String>) -> Vec<ProviderConfig> {
+    let spec = ProviderSpec::from_id(ProviderId::Custom);
+    (1..=MAX_CUSTOM_GATEWAYS)
+        .filter_map(|slot| {
+            let [key, base, model] = custom_vars(slot);
+            let base_url = string_var(vars, &base)?;
+            let model = string_var(vars, &model)?;
+            Some(ProviderConfig {
+                spec,
+                base_url,
+                model,
+                api_key: string_var(vars, &key),
+                required: BTreeMap::new(),
+                headers: attribution_headers(vars, spec),
+            })
+        })
+        .collect()
+}
+
+/// Every variable a provider owns: its key, model, base URL and required
+/// values. The custom network owns every numbered gateway slot, so forgetting
+/// it really forgets all endpoints.
+pub fn provider_variables(id: ProviderId) -> Vec<String> {
+    let spec = ProviderSpec::from_id(id);
+    let mut variables: Vec<String> = vec![
+        spec.api_key_var.to_string(),
+        spec.model_var.to_string(),
+        spec.base_url_var.to_string(),
+    ];
+    variables.extend(spec.required_vars.iter().map(|name| name.to_string()));
+    if id == ProviderId::Custom {
+        for slot in 2..=MAX_CUSTOM_GATEWAYS {
+            variables.extend(custom_vars(slot));
+        }
+    }
+    variables.sort();
+    variables.dedup();
+    variables
 }
 
 fn attribution_headers(
@@ -538,7 +643,9 @@ fn provider_order_var(vars: &BTreeMap<String, String>) -> Vec<ProviderId> {
 
 #[cfg(test)]
 mod tests {
-    use super::PROVIDER_SPECS;
+    use std::collections::BTreeMap;
+
+    use super::{custom_slot_of, provider_variables, Settings, PROVIDER_SPECS};
     use crate::types::ProviderId;
 
     #[test]
@@ -551,5 +658,39 @@ mod tests {
                 .count();
             assert_eq!(matches, 1, "provider {id} must have one spec entry");
         }
+    }
+
+    #[test]
+    fn numbered_custom_gateways_join_one_pool() {
+        let mut vars = BTreeMap::new();
+        vars.insert("CUSTOM_BASE_URL".to_string(), "http://a.example/v1".to_string());
+        vars.insert("CUSTOM_MODEL".to_string(), "model-a".to_string());
+        vars.insert("CUSTOM_2_BASE_URL".to_string(), "http://b.example/v1".to_string());
+        vars.insert("CUSTOM_2_MODEL".to_string(), "model-b".to_string());
+        // A gateway that names only a base URL is half-written, not broken.
+        vars.insert("CUSTOM_3_BASE_URL".to_string(), "http://c.example/v1".to_string());
+
+        let settings = Settings::from_vars(&vars);
+        let gateways = settings.custom();
+        assert_eq!(gateways.len(), 2);
+        assert_eq!(gateways[0].model, "model-a");
+        assert_eq!(gateways[1].base_url, "http://b.example/v1");
+        // Only names are remembered, never values.
+        assert!(settings.has_var("CUSTOM_2_MODEL"));
+        assert!(!settings.has_var("CUSTOM_3_MODEL"));
+    }
+
+    #[test]
+    fn custom_variables_are_recognised_by_slot() {
+        assert_eq!(custom_slot_of("CUSTOM_API_KEY"), Some(1));
+        assert_eq!(custom_slot_of("CUSTOM_MODEL"), Some(1));
+        assert_eq!(custom_slot_of("CUSTOM_4_BASE_URL"), Some(4));
+        assert_eq!(custom_slot_of("CUSTOM_7_MODEL"), None);
+        assert_eq!(custom_slot_of("GROQ_API_KEY"), None);
+
+        // Forgetting the custom network forgets every gateway it grew.
+        let variables = provider_variables(ProviderId::Custom);
+        assert!(variables.contains(&"CUSTOM_6_BASE_URL".to_string()));
+        assert!(variables.contains(&"CUSTOM_MODEL".to_string()));
     }
 }

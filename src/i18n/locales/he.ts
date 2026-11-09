@@ -98,7 +98,9 @@ export const he: Dictionary = {
   paceCalm: "שקט",
   paceNormal: "רגיל",
   paceLively: "תוסס",
-  paceHint: "באיזו תדירות מתפלל הענן. המרווח המינימלי של המסורת נשמר.",
+  paceSeconds: "תפילה כל {secs} שנ׳",
+  paceHint:
+    "באיזו תדירות מופיעה תפילה על הענן. הזז את המחוון כדי לבחור קצב בשניות.",
 
   statsLastDay: "תפילות ב־24 שעות",
   statsTotal: "תפילות בסך הכול",

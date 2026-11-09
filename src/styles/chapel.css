@@ -210,10 +210,10 @@
   animation: bubble-in 520ms var(--ease) both;
 }
 
+/* No line clamp: a prayer is shown whole. The bubble is anchored by its bottom
+   edge, so a long one grows upwards over the sky instead of being cut off. */
 .bubble__text {
-  display: -webkit-box;
   margin: 0;
-  overflow: hidden;
   color: var(--bubble-text);
   font-family: var(--font-serif);
   font-size: 12.5px;
@@ -221,8 +221,6 @@
   text-align: center;
   word-break: break-word;
   user-select: text;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 6;
 }
 
 /* Caret of a prayer that is still being written out. */

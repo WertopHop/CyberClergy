@@ -93,11 +93,13 @@ export const en = {
   rosterBench: "off the cloud",
   rosterAddKey: "Add key",
   rosterCountLabel: "Standing",
-  pace: "Pace",
+  pace: "Rhythm",
   paceCalm: "Calm",
   paceNormal: "Normal",
   paceLively: "Lively",
-  paceHint: "How often the cloud prays. The tradition's minimum interval is respected.",
+  paceSeconds: "a prayer every {secs} s",
+  paceHint:
+    "How often a prayer appears on the cloud. Move the slider to choose the rhythm in seconds.",
 
   statsLastDay: "prayers / 24 h",
   statsTotal: "prayers in total",

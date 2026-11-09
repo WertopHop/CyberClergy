@@ -99,12 +99,13 @@ export const de: Dictionary = {
   rosterBench: "auf der Bank",
   rosterAddKey: "Schlüssel hinzufügen",
   rosterCountLabel: "Auf der Wolke",
-  pace: "Tempo",
+  pace: "Rhythmus",
   paceCalm: "Ruhig",
   paceNormal: "Normal",
   paceLively: "Lebhaft",
+  paceSeconds: "ein Gebet alle {secs} s",
   paceHint:
-    "Wie oft die Wolke betet. Das Mindestintervall der Tradition bleibt gewahrt.",
+    "Wie oft ein Gebet auf der Wolke erscheint. Schiebe den Regler, um den Rhythmus in Sekunden zu wählen.",
 
   statsLastDay: "Gebete / 24 h",
   statsTotal: "Gebete insgesamt",

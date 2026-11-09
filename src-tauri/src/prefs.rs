@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cyberclergy_llm::{Pace, ProviderId, ProviderSpec, PROVIDER_SPECS};
+use cyberclergy_llm::{custom_slot_of, provider_variables, Pace, ProviderId, PROVIDER_SPECS};
 use serde::{Deserialize, Serialize};
 
 pub const SETTINGS_FILE: &str = "settings.json";
@@ -41,13 +41,23 @@ pub struct Preferences {
     /// Networks standing on the cloud, front slot first. `None` means the person
     /// has never chosen one: every configured network then stands up.
     pub roster: Option<Vec<ProviderId>>,
-    /// How often the cloud prays: `calm`, `normal` or `lively`.
+    /// Older spelling of the rhythm, still read so an existing settings file
+    /// keeps parsing. Only used to derive the default interval.
     pub pace: String,
+    /// Explicit rhythm: one prayer of the whole cloud every this many seconds.
+    /// `None` follows the tradition's own interval, modulated by `pace`.
+    pub interval_secs: Option<u64>,
     /// Draft-era cleric count. Read so an old settings file still parses, never
     /// written back: the roster supersedes it.
     #[serde(rename = "clerics", default, skip_serializing)]
     legacy_clerics: Option<usize>,
 }
+
+/// Bounds of the rhythm slider. A prayer more often than every few seconds
+/// would only burn the free hourly budget, and an hour between prayers makes
+/// the chapel look abandoned.
+pub const MIN_INTERVAL_SECS: u64 = 5;
+pub const MAX_INTERVAL_SECS: u64 = 3_600;
 
 impl Default for Preferences {
     fn default() -> Self {
@@ -57,6 +67,7 @@ impl Default for Preferences {
             religion: DEFAULT_RELIGION.to_string(),
             roster: None,
             pace: Pace::default().as_str().to_string(),
+            interval_secs: None,
             legacy_clerics: None,
         }
     }
@@ -110,6 +121,9 @@ impl Preferences {
         });
         self.legacy_clerics = None;
         self.pace = self.pace().as_str().to_string();
+        self.interval_secs = self
+            .interval_secs
+            .map(|secs| secs.clamp(MIN_INTERVAL_SECS, MAX_INTERVAL_SECS));
         self
     }
 }
@@ -183,14 +197,10 @@ impl PrefsStore {
     }
 
     /// Forgets everything the person configured for one provider: credentials,
-    /// extra variables and the chosen model, so "Forget" really resets the row.
+    /// extra variables, the chosen model and every custom gateway slot.
     pub fn clear_provider(&mut self, id: ProviderId) -> Result<(), String> {
-        let spec = ProviderSpec::from_id(id);
-        self.file.keys.remove(spec.api_key_var);
-        self.file.keys.remove(spec.model_var);
-        self.file.keys.remove(spec.base_url_var);
-        for variable in spec.required_vars {
-            self.file.keys.remove(*variable);
+        for variable in provider_variables(id) {
+            self.file.keys.remove(&variable);
         }
         self.persist()
     }
@@ -228,14 +238,16 @@ pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), Str
 }
 
 
-/// True for the API key, every extra variable a provider requires and the
-/// model name, which the settings screen edits as its own field.
+/// True for the API key, every extra variable a provider requires, the model
+/// name (which the settings screen edits as its own field) and any numbered
+/// custom gateway slot.
 pub fn is_known_variable(variable: &str) -> bool {
-    PROVIDER_SPECS.iter().any(|spec| {
-        spec.api_key_var == variable
-            || spec.model_var == variable
-            || spec.required_vars.contains(&variable)
-    })
+    custom_slot_of(variable).is_some()
+        || PROVIDER_SPECS.iter().any(|spec| {
+            spec.api_key_var == variable
+                || spec.model_var == variable
+                || spec.required_vars.contains(&variable)
+        })
 }
 
 fn read_file(path: &Path) -> StoredFile {
@@ -291,6 +303,7 @@ mod tests {
             religion: "  ".to_string(),
             roster: Some(vec![ProviderId::Groq, ProviderId::Groq, ProviderId::Gemini]),
             pace: "hectic".to_string(),
+            interval_secs: Some(0),
             legacy_clerics: Some(4),
         }
         .sanitized();
@@ -304,6 +317,8 @@ mod tests {
             Some(vec![ProviderId::Groq, ProviderId::Gemini])
         );
         assert_eq!(preferences.pace, "normal");
+        // A rhythm of zero seconds is clamped instead of accepted.
+        assert_eq!(preferences.interval_secs, Some(MIN_INTERVAL_SECS));
     }
 
     #[test]
@@ -337,6 +352,7 @@ mod tests {
                 religion: "islam".to_string(),
                 roster: Some(vec![ProviderId::Groq, ProviderId::Mistral]),
                 pace: "Calm".to_string(),
+                interval_secs: Some(45),
                 legacy_clerics: None,
             })
             .expect("preferences are writable");
@@ -419,6 +435,33 @@ mod tests {
             .clear_provider(ProviderId::Groq)
             .expect("clearing is writable");
         assert!(store.keys().is_empty());
+        let _ = fs::remove_dir_all(path.parent().unwrap_or(&path));
+    }
+
+    #[test]
+    fn every_custom_gateway_slot_is_a_known_setting() {
+        let path = temp_path("custom-slots");
+        let mut store = PrefsStore::open(&path);
+        store
+            .set_key("CUSTOM_2_BASE_URL", "http://localhost:8000/v1")
+            .expect("the gateway address is writable");
+        store
+            .set_key("CUSTOM_3_MODEL", "qwen2.5")
+            .expect("the model is writable");
+
+        assert_eq!(
+            store.keys().get("CUSTOM_2_BASE_URL"),
+            Some(&"http://localhost:8000/v1".to_string())
+        );
+
+        // Forgetting the custom network folds every gateway away.
+        store
+            .clear_provider(ProviderId::Custom)
+            .expect("clearing is writable");
+        assert!(store.keys().is_empty());
+
+        // A slot beyond the pool is not a provider setting.
+        assert!(store.set_key("CUSTOM_9_MODEL", "typo").is_err());
         let _ = fs::remove_dir_all(path.parent().unwrap_or(&path));
     }
 

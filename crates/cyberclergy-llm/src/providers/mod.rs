@@ -3,6 +3,7 @@
 pub mod cloudflare;
 pub mod gemini;
 pub mod openai_compat;
+pub mod pool;
 
 use std::time::Duration;
 

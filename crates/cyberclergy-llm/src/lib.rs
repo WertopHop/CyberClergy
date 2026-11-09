@@ -29,8 +29,8 @@ pub use clergy::{
     QueueError, RecordOutcome, ReligionProfile, Severity, SubmitOutcome, Tempo, Theme,
 };
 pub use config::{
-    ProviderConfig, ProviderSpec, ProviderStatus, Protocol, Settings, SharedSettings,
-    PROVIDER_SPECS,
+    custom_slot_of, custom_vars, provider_variables, ProviderConfig, ProviderSpec, ProviderStatus,
+    Protocol, Settings, SharedSettings, MAX_CUSTOM_GATEWAYS, PROVIDER_SPECS,
 };
 pub use errors::LlmError;
 pub use generate::{build_prayer_request, PrayerGenerator, USER_INSTRUCTION};

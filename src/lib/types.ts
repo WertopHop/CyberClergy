@@ -36,7 +36,7 @@ export interface ProviderView {
   fields: ProviderField[];
 }
 
-/** How often the cloud prays, relative to the tradition's schedule. */
+/** Legacy rhythm spelling, still stored so an older settings file keeps its shape. */
 export type Pace = "calm" | "normal" | "lively";
 
 export interface Preferences {
@@ -49,6 +49,11 @@ export interface Preferences {
    */
   roster: ProviderId[] | null;
   pace: Pace;
+  /**
+   * One prayer of the whole cloud every this many seconds. `null` follows the
+   * tradition's own interval.
+   */
+  interval_secs: number | null;
 }
 
 export interface PrayerOutcome {

@@ -456,6 +456,45 @@
   font-weight: 500;
 }
 
+/* Foldable section head: the whole row is the toggle, so the sheet opens with
+   a compact table of contents instead of a wall of inputs. */
+.group__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  color: inherit;
+  text-align: start;
+}
+
+.group__head .group__title {
+  margin: 0;
+}
+
+.group.is-open > .group__head {
+  margin-bottom: 4px;
+}
+
+.group__chevron {
+  display: flex;
+  margin-inline-start: auto;
+  color: var(--fg-faint);
+  transition: transform 200ms var(--ease);
+}
+
+.group.is-open .group__chevron {
+  transform: rotate(180deg);
+}
+
+/* Rhythm slider: a plain control the platform can style. */
+.slider {
+  width: 100%;
+  margin: 6px 0 2px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .group__hint {
   margin: 0 0 12px;
   color: var(--fg-faint);

@@ -92,11 +92,13 @@ export const ru: Dictionary = {
   rosterBench: "на скамье",
   rosterAddKey: "Добавить ключ",
   rosterCountLabel: "На облаке",
-  pace: "Темп",
+  pace: "Ритм",
   paceCalm: "Тихий",
   paceNormal: "Обычный",
   paceLively: "Частый",
-  paceHint: "Как часто молится облако. Минимальный интервал традиции соблюдается.",
+  paceSeconds: "молитва каждые {secs} с",
+  paceHint:
+    "Как часто на облаке появляется молитва. Двиньте ползунок, чтобы выбрать ритм в секундах.",
 
   statsLastDay: "молитв за 24 часа",
   statsTotal: "молитв всего",

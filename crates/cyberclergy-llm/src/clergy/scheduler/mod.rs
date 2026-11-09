@@ -145,6 +145,19 @@ impl Cadence {
         }
     }
 
+    /// A rhythm the person chose themselves: one prayer of the whole cloud
+    /// every `cloud_secs`. The per-cleric gap is that multiplied by the number
+    /// of clerics, so adding a robot spreads the prayers instead of doubling
+    /// them — the cloud keeps the promised tempo whatever its size.
+    pub fn every(cloud_secs: u64, clerics: usize) -> Self {
+        let slots = clerics.clamp(1, MAX_SLOTS) as u64;
+        Self {
+            pace: Pace::Normal,
+            interval_secs: cloud_secs.max(1).saturating_mul(slots),
+            floor_secs: 1,
+        }
+    }
+
     pub fn pace(&self) -> Pace {
         self.pace
     }
@@ -372,6 +385,22 @@ mod tests {
         }
         assert_eq!(Pace::parse("  LIVELY "), Some(Pace::Lively));
         assert_eq!(Pace::parse("frantic"), None);
+    }
+
+    #[test]
+    fn a_chosen_rhythm_keeps_its_tempo_whatever_the_cloud_size() {
+        // One prayer of the whole cloud a minute stays a prayer a minute as the
+        // roster grows; only the gap between one cleric's turns changes.
+        let cadence = Cadence::every(60, 6);
+        assert_eq!(cadence.slot_gap_secs(6), 60);
+        assert_eq!(cadence.first_due(1, 6, NOW), NOW + 60);
+        assert_eq!(cadence.gap_secs(), 360);
+
+        let alone = Cadence::every(60, 1);
+        assert_eq!(alone.gap_secs(), 60);
+
+        // A zero-second rhythm still leaves a second between prayers.
+        assert_eq!(Cadence::every(0, 2).slot_gap_secs(2), 1);
     }
 
     #[test]

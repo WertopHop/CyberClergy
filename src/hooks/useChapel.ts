@@ -19,9 +19,14 @@ import type {
   ThemeId,
 } from "../lib/types";
 
-/** Characters revealed per tick; ~70 per second reads like a patient hand. */
-const CHARS_PER_TICK = 2;
-const TICK_MS = 30;
+/**
+ * Reveal speed of a prayer. Deliberately slow: five characters a second reads
+ * like a hand still writing, and a finished prayer never flashes by unread.
+ * The reveal is computed from the elapsed time rather than per tick, so a
+ * throttled background window cannot swallow half of a prayer.
+ */
+const CHARS_PER_SECOND = 5;
+const TICK_MS = 60;
 /** A bubble lives longer when there is more to read, within reason. */
 const MIN_TTL_MS = 14_000;
 const TTL_PER_CHAR_MS = 45;
@@ -55,7 +60,16 @@ export interface ChapelState {
 }
 
 function typingDuration(text: string): number {
-  return Math.ceil(text.length / CHARS_PER_TICK) * TICK_MS;
+  return Math.ceil((text.length / CHARS_PER_SECOND) * 1000);
+}
+
+/** Characters that should be on screen by `now`. */
+function revealed(bubble: Bubble, now: number): number {
+  const elapsed = Math.max(0, now - bubble.at);
+  return Math.min(
+    bubble.text.length,
+    Math.floor((elapsed / 1000) * CHARS_PER_SECOND),
+  );
 }
 
 function bubbleTtl(text: string): number {
@@ -140,6 +154,11 @@ export function useChapel({ enabled }: { enabled: boolean }): ChapelState {
         const existing = current[event.cleric];
         if (existing && existing.shown < existing.text.length) {
           const pending = queued.current[event.cleric] ?? [];
+          // A slow reveal makes a long queue pointless: the oldest waiting
+          // prayer would only be shown stale, so the two newest are kept.
+          if (pending.length >= 2) {
+            pending.shift();
+          }
           pending.push(event);
           queued.current[event.cleric] = pending;
           return current;
@@ -209,11 +228,13 @@ export function useChapel({ enabled }: { enabled: boolean }): ChapelState {
             continue;
           }
           if (bubble.shown < bubble.text.length) {
-            changed = true;
-            next[index] = {
-              ...bubble,
-              shown: Math.min(bubble.text.length, bubble.shown + CHARS_PER_TICK),
-            };
+            const shown = revealed(bubble, now);
+            if (shown !== bubble.shown) {
+              changed = true;
+              next[index] = { ...bubble, shown };
+            } else {
+              next[index] = bubble;
+            }
             continue;
           }
           const waiting = shiftQueued(queued, index);

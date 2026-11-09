@@ -2,14 +2,13 @@
 // expanded, its credentials replaced, verified with a live request, or forgotten.
 // The sheet also shows how the chapel keeps its rhythm and what the journal has
 // counted so far.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { LOCALES, type Translate } from "../i18n";
 import { checkProvider, clearProvider, prayerStats, saveProviderField } from "../lib/bridge";
 import { MAX_ROBOTS, providerLabel, providerName } from "../lib/providers";
 import type {
   ChapelStatus,
-  Pace,
   PrayerStats,
   Preferences,
   ProviderField,
@@ -33,7 +32,7 @@ interface SettingsPanelProps {
   onProviders: (providers: ProviderView[]) => void;
 }
 
-function fieldLabel(name: string, t: Translate): string {
+function baseFieldLabel(name: string, t: Translate): string {
   if (name.endsWith("_API_KEY")) {
     return t("fieldApiKey");
   }
@@ -50,6 +49,14 @@ function fieldLabel(name: string, t: Translate): string {
     return t("fieldModel");
   }
   return name;
+}
+
+/** Numbered custom gateways share their labels, so the slot is appended:
+ * "Base URL · 2". The number itself needs no translation. */
+function fieldLabel(name: string, t: Translate): string {
+  const base = baseFieldLabel(name, t);
+  const slot = /^CUSTOM_(\d+)_/.exec(name)?.[1];
+  return slot ? `${base} · ${slot}` : base;
 }
 
 interface SegmentedOption<T extends string> {
@@ -82,6 +89,40 @@ function Segmented<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+interface GroupProps {
+  title: string;
+  hint?: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}
+
+/** A settings section that folds away. The provider list and the roster grow
+ * long, so someone who came to change one setting keeps the sheet short. */
+function Group({ title, hint, open, onToggle, children }: GroupProps) {
+  return (
+    <section className={`group ${open ? "is-open" : ""}`}>
+      <button
+        type="button"
+        className="group__head"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <h3 className="group__title">{title}</h3>
+        <span className="group__chevron" aria-hidden="true">
+          <IconChevron />
+        </span>
+      </button>
+      {open ? (
+        <>
+          {hint ? <p className="group__hint">{hint}</p> : null}
+          {children}
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -412,6 +453,15 @@ export function SettingsPanel({
   const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(
     null,
   );
+  // The long sections start folded or open depending on what a first-time
+  // visitor needs: the networks come first, the roster once something is set up.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    networks: true,
+    roster: false,
+  });
+
+  const toggleGroup = (name: string) =>
+    setOpenGroups((current) => ({ ...current, [name]: !current[name] }));
 
   // The stored roster is written back whole: after the first toggle `null`
   // ("never chosen") never returns, so an emptied cloud stays empty.
@@ -421,6 +471,19 @@ export function SettingsPanel({
       : [...roster, id].slice(0, MAX_ROBOTS);
     onChange({ roster: next });
   };
+
+  const religion = religions.find((entry) => entry.id === preferences.religion);
+  // Before the slider is touched, show the rhythm the tradition itself keeps:
+  // its interval spread over the robots standing.
+  const rhythm =
+    preferences.interval_secs ??
+    Math.max(
+      5,
+      Math.round(
+        (religion?.schedule.interval_seconds ?? 900) /
+          Math.max(roster.length, 1),
+      ),
+    );
 
   return (
     <>
@@ -448,9 +511,12 @@ export function SettingsPanel({
         </header>
 
         <div className="sheet__body">
-          <section className="group">
-            <h3 className="group__title">{t("settingsNetworks")}</h3>
-            <p className="group__hint">{t("settingsNetworksHint")}</p>
+          <Group
+            title={t("settingsNetworks")}
+            hint={t("settingsNetworksHint")}
+            open={openGroups.networks}
+            onToggle={() => toggleGroup("networks")}
+          >
             <div className="providers">
               {providers.map((provider) => (
                 <ProviderRow
@@ -475,11 +541,14 @@ export function SettingsPanel({
                   : t("storageFile")}
               </span>
             </div>
-          </section>
+          </Group>
 
-          <section className="group">
-            <h3 className="group__title">{t("settingsRoster")}</h3>
-            <p className="group__hint">{t("settingsRosterHint")}</p>
+          <Group
+            title={t("settingsRoster")}
+            hint={t("settingsRosterHint")}
+            open={openGroups.roster}
+            onToggle={() => toggleGroup("roster")}
+          >
             <div className="roster">
               {providers.map((provider) => {
                 const onCloud = roster.includes(provider.id);
@@ -533,7 +602,7 @@ export function SettingsPanel({
                 })}
               </span>
             </div>
-          </section>
+          </Group>
 
           <section className="group">
             <h3 className="group__title">{t("settingsAppearance")}</h3>
@@ -588,16 +657,22 @@ export function SettingsPanel({
             </div>
             <div className="row">
               <span className="row__label">{t("pace")}</span>
-              <Segmented<Pace>
-                value={preferences.pace}
-                options={[
-                  { value: "calm", label: t("paceCalm") },
-                  { value: "normal", label: t("paceNormal") },
-                  { value: "lively", label: t("paceLively") },
-                ]}
-                onChange={(pace) => onChange({ pace })}
-              />
+              <span className="row__value">
+                {t("paceSeconds", { secs: rhythm })}
+              </span>
             </div>
+            <input
+              className="slider"
+              type="range"
+              min={5}
+              max={1800}
+              step={5}
+              value={rhythm}
+              aria-label={t("pace")}
+              onChange={(event) =>
+                onChange({ interval_secs: Number(event.target.value) })
+              }
+            />
             <p className="row__hint">{t("paceHint")}</p>
           </section>
 

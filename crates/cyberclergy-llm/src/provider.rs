@@ -18,6 +18,7 @@ use crate::errors::LlmError;
 use crate::providers::cloudflare::CloudflareProvider;
 use crate::providers::gemini::GeminiProvider;
 use crate::providers::openai_compat::OpenAiCompatProvider;
+use crate::providers::pool::CustomPool;
 use crate::types::{ChatRequest, ChatResponse, ProviderId};
 
 /// Upper bound for a locally computed backoff delay. Providers that ask for a
@@ -60,7 +61,9 @@ impl Registry {
         let mut providers: BTreeMap<ProviderId, Arc<dyn Provider>> = BTreeMap::new();
 
         for config in settings.providers() {
-            if !config.is_configured() {
+            // The custom network is not one endpoint but a pool; it is built
+            // below from every gateway that named a base URL and a model.
+            if config.id() == ProviderId::Custom || !config.is_configured() {
                 continue;
             }
             let adapter: Arc<dyn Provider> = match config.protocol() {
@@ -79,6 +82,29 @@ impl Registry {
                 )),
             };
             providers.insert(config.id(), adapter);
+        }
+
+        let mut gateways: Vec<Arc<dyn Provider>> = settings
+            .custom()
+            .iter()
+            .map(|config| {
+                Arc::new(OpenAiCompatProvider::new(
+                    config.clone(),
+                    client.clone(),
+                    timeout,
+                )) as Arc<dyn Provider>
+            })
+            .collect();
+        match gateways.len() {
+            0 => {}
+            1 => {
+                if let Some(single) = gateways.pop() {
+                    providers.insert(ProviderId::Custom, single);
+                }
+            }
+            _ => {
+                providers.insert(ProviderId::Custom, Arc::new(CustomPool::new(gateways)));
+            }
         }
 
         Ok(Self {

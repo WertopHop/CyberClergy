@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use cyberclergy_llm::{ProviderId, ProviderSpec, PROVIDER_SPECS};
+use cyberclergy_llm::{provider_variables, ProviderId, PROVIDER_SPECS};
 use keyring::{Entry, Error as KeyringError};
 
 use crate::prefs::PrefsStore;
@@ -87,12 +87,12 @@ impl SecretStore {
         let mut merged = self.prefs.keys();
         if self.backend == Backend::Keychain {
             for variable in known_variables() {
-                let Ok(entry) = Entry::new(SERVICE, variable) else {
+                let Ok(entry) = Entry::new(SERVICE, &variable) else {
                     continue;
                 };
                 if let Ok(value) = entry.get_password() {
                     if !value.trim().is_empty() {
-                        merged.insert(variable.to_string(), value);
+                        merged.insert(variable, value);
                     }
                 }
             }
@@ -118,12 +118,12 @@ impl SecretStore {
     }
 
     /// Forgets every setting of a provider from both backends, including the
-    /// model override, so "Forget" really resets the row.
+    /// model override and the extra custom gateways, so "Forget" really resets
+    /// the row.
     pub fn clear_provider(&mut self, id: ProviderId) -> Result<(), String> {
-        let spec = ProviderSpec::from_id(id);
         let mut first_error = None;
-        for variable in provider_variables(spec) {
-            if let Err(error) = delete_keychain(variable) {
+        for variable in provider_variables(id) {
+            if let Err(error) = delete_keychain(&variable) {
                 first_error.get_or_insert(error);
             }
         }
@@ -138,14 +138,10 @@ impl SecretStore {
 /// Every variable name a provider may need, in a stable order. The model and
 /// base-URL overrides live here too, otherwise a value written to the keychain
 /// would never be read back into the settings snapshot.
-fn known_variables() -> impl Iterator<Item = &'static str> {
-    PROVIDER_SPECS.iter().flat_map(provider_variables)
-}
-
-fn provider_variables(spec: &'static ProviderSpec) -> impl Iterator<Item = &'static str> {
-    std::iter::once(spec.api_key_var)
-        .chain(spec.required_vars.iter().copied())
-        .chain([spec.model_var, spec.base_url_var])
+fn known_variables() -> impl Iterator<Item = String> {
+    PROVIDER_SPECS
+        .iter()
+        .flat_map(|spec| provider_variables(spec.id))
 }
 
 /// Writes, reads back and removes a throwaway entry. Only a full round trip

@@ -103,8 +103,9 @@ export const es: Dictionary = {
   paceCalm: "Suave",
   paceNormal: "Normal",
   paceLively: "Vivo",
+  paceSeconds: "una oración cada {secs} s",
   paceHint:
-    "Con qué frecuencia ora la nube. Se respeta el intervalo mínimo de la tradición.",
+    "Con qué frecuencia aparece una oración en la nube. Mueve el control para elegir el ritmo en segundos.",
 
   statsLastDay: "oraciones / 24 h",
   statsTotal: "oraciones en total",

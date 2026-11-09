@@ -25,8 +25,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use cyberclergy_llm::{
-    Cadence, ChatRequest, Health, Intercession, IntercessionRequest, Policy, PrayerGenerator,
-    ProfileCatalog, ProviderId, ProviderSpec, Registry, ReligionProfile, Settings, PROVIDER_SPECS,
+    custom_slot_of, custom_vars, ChatRequest, Health, Intercession, IntercessionRequest, Policy,
+    PrayerGenerator, ProfileCatalog, ProviderId, ProviderSpec, Registry, ReligionProfile, Settings,
+    MAX_CUSTOM_GATEWAYS, PROVIDER_SPECS,
 };
 use serde::Serialize;
 use tauri::{Manager, State};
@@ -154,6 +155,10 @@ impl AppState {
             .iter()
             .map(|spec| spec.id)
             .filter(|id| {
+                if *id == ProviderId::Custom {
+                    // One ready gateway is enough to put the custom robot up.
+                    return !self.settings.custom().is_empty();
+                }
                 self.settings
                     .provider(*id)
                     .map(|config| config.is_configured())
@@ -178,9 +183,12 @@ impl AppState {
         PROVIDER_SPECS
             .iter()
             .map(|spec| {
+                if spec.id == ProviderId::Custom {
+                    return self.custom_view(spec);
+                }
                 let config = self.settings.provider(spec.id);
                 let mut fields = vec![ProviderField {
-                    name: spec.api_key_var,
+                    name: spec.api_key_var.to_string(),
                     secret: is_secret_var(spec.api_key_var),
                     set: config.map(|config| config.api_key.is_some()).unwrap_or(false),
                 }];
@@ -190,7 +198,7 @@ impl AppState {
                         continue;
                     }
                     fields.push(ProviderField {
-                        name: variable,
+                        name: variable.to_string(),
                         secret: is_secret_var(variable),
                         set: config
                             .map(|config| config.required_value(variable).is_some())
@@ -209,6 +217,53 @@ impl AppState {
                 }
             })
             .collect()
+    }
+
+    /// The custom network is a single row holding as many gateways as the
+    /// person filled in, plus one blank gateway to grow into. Saving an endpoint
+    /// therefore reveals the next empty one, so any number of
+    /// OpenAI-compatible servers can be added without a separate row each.
+    fn custom_view(&self, spec: &'static ProviderSpec) -> ProviderView {
+        let last_used = (1..=MAX_CUSTOM_GATEWAYS)
+            .filter(|slot| {
+                let [_, base, model] = custom_vars(*slot);
+                self.settings.has_var(&base) || self.settings.has_var(&model)
+            })
+            .max()
+            .unwrap_or(0);
+        let shown = (last_used + 1).clamp(1, MAX_CUSTOM_GATEWAYS);
+        let mut fields = Vec::new();
+        for slot in 1..=shown {
+            let [key, base, model] = custom_vars(slot);
+            // Slot one's model has its own editor at the top of the row.
+            if slot > 1 {
+                fields.push(ProviderField {
+                    name: model.clone(),
+                    secret: false,
+                    set: self.settings.has_var(&model),
+                });
+            }
+            // Where the gateway lives comes first: it defines the endpoint.
+            fields.push(ProviderField {
+                name: base.clone(),
+                secret: false,
+                set: self.settings.has_var(&base),
+            });
+            fields.push(ProviderField {
+                name: key.clone(),
+                secret: true,
+                set: self.settings.has_var(&key),
+            });
+        }
+        let first = self.settings.provider(ProviderId::Custom);
+        ProviderView {
+            id: ProviderId::Custom,
+            model: first.map(|config| config.model.clone()).unwrap_or_default(),
+            default_model: spec.default_model.to_string(),
+            model_var: spec.model_var,
+            configured: !self.settings.custom().is_empty(),
+            fields,
+        }
     }
 
     /// Keeps preferences pointing at a religion the catalog actually knows and
@@ -236,8 +291,10 @@ impl AppState {
 
         // Only the rhythm-shaping settings reset the schedule; switching a theme
         // must not scatter the clerics' turns.
-        let rhythm_changed =
-            stored.religion != previous.religion || stored.pace != previous.pace || roster_changed;
+        let rhythm_changed = stored.religion != previous.religion
+            || stored.pace != previous.pace
+            || stored.interval_secs != previous.interval_secs
+            || roster_changed;
         if rhythm_changed {
             self.schedule.clear();
             self.ensure_schedule(now_secs());
@@ -267,12 +324,8 @@ impl AppState {
             self.schedule.clear();
             return;
         };
-        let cadence = Cadence::new(
-            preferences.pace(),
-            profile.schedule.interval_seconds,
-            profile.schedule.min_interval_seconds,
-        );
         let count = roster.len();
+        let cadence = scheduler::cadence_for(&preferences, profile, count);
         self.schedule = (0..count)
             .map(|slot| cadence.first_due(slot, count, now))
             .collect();
@@ -282,7 +335,7 @@ impl AppState {
 /// One credential field of a provider, as the settings screen sees it.
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderField {
-    pub name: &'static str,
+    pub name: String,
     /// Whether the value is currently known (from `.env` or the secret store).
     pub set: bool,
     /// True for keys and tokens, which the interface masks while typing.
@@ -381,11 +434,16 @@ fn save_provider_field(
 ) -> Result<Vec<ProviderView>, String> {
     let id = parse_provider(&provider)?;
     let spec = ProviderSpec::from_id(id);
+    let custom_slot = custom_slot_of(&field);
     if field != spec.api_key_var
         && field != spec.model_var
         && !spec.required_vars.contains(&field.as_str())
+        && custom_slot.is_none()
     {
         return Err(format!("`{field}` does not belong to {id}"));
+    }
+    if custom_slot.is_some() && id != ProviderId::Custom {
+        return Err(format!("`{field}` belongs to the custom network, not {id}"));
     }
 
     let mut state = state.lock().map_err(|_| state_error())?;

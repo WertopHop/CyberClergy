@@ -27,6 +27,7 @@ import type {
   PrayerRecord,
   PrayerStats,
   Preferences,
+  ProviderField,
   ProviderId,
   ProviderView,
   ReligionProfile,
@@ -48,6 +49,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // No roster yet: the chapel stands every configured network up.
   roster: null,
   pace: "normal",
+  // The tradition keeps its own rhythm until the slider is touched.
+  interval_secs: null,
 };
 
 const PREFS_KEY = "cyberclergy.preview.preferences";
@@ -177,7 +180,17 @@ function normalizePreferences(value: Partial<Preferences>): Preferences {
           typeof id === "string" && isProviderId(id),
       )
     : null;
-  return { ...DEFAULT_PREFERENCES, ...value, pace, roster };
+  const interval =
+    typeof value.interval_secs === "number" && value.interval_secs > 0
+      ? Math.round(value.interval_secs)
+      : null;
+  return {
+    ...DEFAULT_PREFERENCES,
+    ...value,
+    pace,
+    roster,
+    interval_secs: interval,
+  };
 }
 
 /** Robots the preview can show, mirroring the backend's roster resolution. */
@@ -243,6 +256,40 @@ export async function listReligions(): Promise<ReligionProfile[]> {
   return DEMO_RELIGIONS;
 }
 
+/** Preview mirror of the shell's custom gateways: each filled one reveals the
+ * next empty one, so any number of OpenAI-compatible servers can be added. */
+function gatewayFields(slot: number): ProviderField[] {
+  const names =
+    slot === 1
+      ? ["CUSTOM_BASE_URL", "CUSTOM_API_KEY"]
+      : [`CUSTOM_${slot}_MODEL`, `CUSTOM_${slot}_BASE_URL`, `CUSTOM_${slot}_API_KEY`];
+  return names.map((name) => ({
+    name,
+    set: false,
+    secret: name.endsWith("API_KEY"),
+  }));
+}
+
+function growGateways(
+  entry: ProviderView,
+  fields: ProviderField[],
+): ProviderField[] {
+  if (entry.id !== "custom" || fields.length === 0) {
+    return fields;
+  }
+  const lastSlot = fields.reduce((highest, item) => {
+    const match = /^CUSTOM_(\d+)_/.exec(item.name);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 1);
+  // The tail of the list is the newest gateway; once it holds a value, the
+  // next one is appended.
+  const newest = fields.slice(-3);
+  if (!newest.some((item) => item.set) || lastSlot >= 6) {
+    return fields;
+  }
+  return [...fields, ...gatewayFields(lastSlot + 1)];
+}
+
 export async function saveProviderField(
   provider: ProviderId,
   field: string,
@@ -259,8 +306,11 @@ export async function saveProviderField(
     if (entry.id !== provider) {
       return entry;
     }
-    const fields = entry.fields.map((item) =>
-      item.name === field ? { ...item, set: value.trim().length > 0 } : item,
+    const fields = growGateways(
+      entry,
+      entry.fields.map((item) =>
+        item.name === field ? { ...item, set: value.trim().length > 0 } : item,
+      ),
     );
     // The model has its own editor: an empty value falls back to the default,
     // and a network without a built-in default (local, custom) then stays off.
@@ -268,13 +318,19 @@ export async function saveProviderField(
       field === entry.model_var
         ? value.trim() || entry.default_model
         : entry.model;
-    const credentialsReady = fields.every((item) => item.set);
-    const modelReady = entry.default_model !== "" || model !== "";
+    // A custom network is ready as soon as one of its gateways is; the trailing
+    // empty one is an invitation, not a missing credential.
+    const ready =
+      entry.id === "custom"
+        ? model !== "" &&
+          fields.some((item) => item.name.endsWith("_BASE_URL") && item.set)
+        : fields.every((item) => item.set) &&
+          (entry.default_model !== "" || model !== "");
     return {
       ...entry,
       model,
       fields,
-      configured: credentialsReady && modelReady,
+      configured: ready,
     };
   });
   await wait(150);
@@ -293,7 +349,11 @@ export async function clearProvider(
           ...entry,
           model: entry.default_model,
           configured: false,
-          fields: entry.fields.map((field) => ({ ...field, set: false })),
+          // Forgetting a custom network also folds the extra gateways away.
+          fields:
+            entry.id === "custom"
+              ? gatewayFields(1)
+              : entry.fields.map((field) => ({ ...field, set: false })),
         }
       : entry,
   );

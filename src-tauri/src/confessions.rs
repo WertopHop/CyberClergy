@@ -38,6 +38,9 @@ impl ConfessionStore {
         store
     }
 
+    /// Where the queue is stored. Read by the startup banner of a debug build,
+    /// so a release build carries the accessor without a caller.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn path(&self) -> &Path {
         &self.path
     }

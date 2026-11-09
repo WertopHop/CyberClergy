@@ -44,9 +44,9 @@ export const STATUS_EVENT = "chapel://status";
 export type Unlisten = () => void;
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  language: "ru",
+  language: "en",
   theme: "night",
-  religion: "christianity",
+  religion: "judaism",
   // No roster yet: the chapel stands every configured network up.
   roster: null,
   pace: "normal",

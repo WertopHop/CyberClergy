@@ -20,9 +20,10 @@ use serde::{Deserialize, Serialize};
 pub const SETTINGS_FILE: &str = "settings.json";
 
 pub const SUPPORTED_THEMES: &[&str] = &["night", "dawn"];
-pub const DEFAULT_LANGUAGE: &str = "ru";
+/// English is the default: the app ships to everyone, not to one country.
+pub const DEFAULT_LANGUAGE: &str = "en";
 pub const DEFAULT_THEME: &str = "night";
-pub const DEFAULT_RELIGION: &str = "christianity";
+pub const DEFAULT_RELIGION: &str = "judaism";
 /// Highest number of robots the cloud holds: four tiers of three, matching the
 /// `MAX_SLOTS` ceiling of the scheduler and the stepped platform in the scene.
 pub const MAX_ROBOTS: usize = 12;
@@ -153,6 +154,9 @@ impl PrefsStore {
         Self { path, file }
     }
 
+    /// Where the settings file lives. Read by the startup banner of a debug
+    /// build, so a release build carries the accessor without a caller.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn path(&self) -> &Path {
         &self.path
     }

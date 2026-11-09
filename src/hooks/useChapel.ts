@@ -25,7 +25,7 @@ import type {
  * The reveal is computed from the elapsed time rather than per tick, so a
  * throttled background window cannot swallow half of a prayer.
  */
-const CHARS_PER_SECOND = 5;
+const CHARS_PER_SECOND = 10;
 const TICK_MS = 60;
 /** A bubble lives longer when there is more to read, within reason. */
 const MIN_TTL_MS = 14_000;

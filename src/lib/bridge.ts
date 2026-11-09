@@ -569,6 +569,8 @@ function demoStatus(): ChapelStatus {
     next_in_secs: null,
     waiting_for: null,
     buffered: 0,
+    // The showcase runs without the shell, so it borrows the shell's speed.
+    reveal_cps: 10,
   };
 }
 

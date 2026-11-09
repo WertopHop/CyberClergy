@@ -19,9 +19,6 @@ use serde::{Deserialize, Serialize};
 
 pub const SETTINGS_FILE: &str = "settings.json";
 
-/// Every interface language the bundled locales cover. The list mirrors
-/// `src/i18n/index.ts`; a mismatch would only cost a fallback to English.
-pub const SUPPORTED_LANGUAGES: &[&str] = &["ru", "en", "uk", "he", "de", "es"];
 pub const SUPPORTED_THEMES: &[&str] = &["night", "dawn"];
 pub const DEFAULT_LANGUAGE: &str = "ru";
 pub const DEFAULT_THEME: &str = "night";
@@ -99,7 +96,9 @@ impl Preferences {
     /// Coerces out-of-range values instead of rejecting them: a typo in a
     /// hand-edited file must never keep the chapel from opening.
     pub fn sanitized(mut self) -> Self {
-        if !SUPPORTED_LANGUAGES.contains(&self.language.as_str()) {
+        // The crate owns the language table, so the settings screen and the
+        // prompt cannot drift apart.
+        if !cyberclergy_llm::is_supported(&self.language) {
             self.language = DEFAULT_LANGUAGE.to_string();
         }
         if !SUPPORTED_THEMES.contains(&self.theme.as_str()) {

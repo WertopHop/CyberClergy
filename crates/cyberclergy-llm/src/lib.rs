@@ -14,6 +14,7 @@ pub mod clergy;
 pub mod config;
 pub mod errors;
 pub mod generate;
+pub mod language;
 pub mod prompts;
 pub mod provider;
 pub mod providers;
@@ -28,12 +29,14 @@ pub use clergy::{
     Cadence, Direction, Health, Intercession, IntercessionQueue, IntercessionRequest,
     IntercessionStatus, IntercessionTask, Meter, Pace, Policy, ProfileCatalog, ProfileError,
     QueueError, RecordOutcome, ReligionProfile, Severity, SubmitOutcome, Tempo, Theme,
+    ADDENDUM_FILE, OFFLINE_FILE, PROFILE_FILE,
 };
 pub use config::{
     custom_slot_of, custom_vars, provider_variables, ProviderConfig, ProviderSpec, ProviderStatus,
     Protocol, Settings, SharedSettings, MAX_CUSTOM_GATEWAYS, PROVIDER_SPECS,
 };
 pub use errors::LlmError;
+pub use language::{english_name, is_supported, LANGUAGES};
 pub use generate::{build_prayer_request, PrayerGenerator, USER_INSTRUCTION};
 pub use prompts::{
     PrayerSpec, PromptContext, PromptError, PromptTemplate, RELIGION_PROFILE_TEMPLATE,

@@ -54,12 +54,25 @@ pub const EVENT_STATUS: &str = "chapel://status";
 /// Free tiers dislike bursts; two prayers in flight keeps the cloud lively
 /// without looking like an attack.
 const MAX_IN_FLIGHT: usize = 2;
-/// Upper bound for a single sleep. Notifications wake the loop earlier, so this
-/// only matters when nothing else happens.
-const IDLE_WAIT_SECS: u64 = 10;
+/// Prayer turns are due on whole seconds, so the loop never sleeps longer than
+/// this: a turn starts on the second it was scheduled for, not up to ten
+/// seconds later. Notifications wake it earlier.
+const MAX_WAIT_MS: u64 = 2_000;
+/// And never spins: below this there is nothing to do anyway.
+const MIN_WAIT_MS: u64 = 100;
 /// Prayers kept per slot from one batch. Beyond this the leftovers would go
 /// stale before their turn came.
 const MAX_BUFFERED: usize = 4;
+/// Characters the interface types per second. A prayer counts as finished when
+/// its last letter lands, so the chosen rhythm starts counting there. This is
+/// the single source of that number: the status snapshot carries it to the
+/// interface, which must type at exactly this speed.
+pub const REVEAL_CHARS_PER_SECOND: u64 = 10;
+/// Weight of a fresh measurement in the running average of reply time.
+const LATENCY_WEIGHT: f64 = 0.35;
+/// Before the first reply is measured: free models usually answer within a few
+/// seconds, so the first request already starts slightly early.
+pub(crate) const DEFAULT_LATENCY_MS: u64 = 6_000;
 
 /// One prayer a request already paid for.
 #[derive(Debug, Clone)]
@@ -177,6 +190,9 @@ pub struct ChapelStatus {
     pub waiting_for: Option<cyberclergy_llm::ProviderId>,
     /// Prayers a batch already paid for, waiting for their turn.
     pub buffered: usize,
+    /// Characters per second the interface types. Reported here so the typing
+    /// speed exists in exactly one place.
+    pub reveal_cps: u64,
 }
 
 /// Reads the hourly call budget from the environment, falling back to the
@@ -236,9 +252,29 @@ async fn run(app: AppHandle, shared: Arc<Mutex<AppState>>) {
                     complete(&app, &shared, finished);
                 }
             }
-            _ = tokio::time::sleep(Duration::from_secs(IDLE_WAIT_SECS)) => {}
+            _ = tokio::time::sleep(wait_until_next_due(&shared)) => {}
         }
     }
+}
+
+/// How long the loop may sleep: until the nearest due turn, so a prayer starts
+/// on its second, and never longer than [`MAX_WAIT_MS`] so the status snapshot
+/// stays fresh.
+fn wait_until_next_due(shared: &Arc<Mutex<AppState>>) -> Duration {
+    let now = now_secs();
+    let upcoming = shared.lock().ok().and_then(|state| {
+        state
+            .schedule
+            .iter()
+            .filter(|due| **due > now)
+            .min()
+            .map(|due| (due - now) as u64 * 1000)
+    });
+    Duration::from_millis(
+        upcoming
+            .unwrap_or(MAX_WAIT_MS)
+            .clamp(MIN_WAIT_MS, MAX_WAIT_MS),
+    )
 }
 
 struct Job {
@@ -529,6 +565,7 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
             let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
             let completion_tokens = usage.completion_tokens.unwrap_or(0);
             state.health.note_success(seconds);
+            state.latency_ms = smooth_latency(state.latency_ms, elapsed_ms);
             state.last_error = None;
             counted = task.is_some();
 
@@ -645,6 +682,25 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
         );
     }
 
+    // A chosen rhythm means "pause after a prayer", not "a prayer every N": the
+    // words take time to be typed out, so the next prayer is spoken `pause`
+    // seconds after the last letter of this one. Waiting to *ask* until then
+    // would add the whole network round-trip to the gap, which is how a five
+    // second pause turned into half a minute. The request therefore starts
+    // early — by the average time a reply has taken — so the words are already
+    // in hand when the pause ends. A prayer that arrives early waits in the
+    // interface, which shows it exactly on time.
+    let pause = state.preferences().interval_secs;
+    if let Some(pause) = pause {
+        if let Some(event) = &prayer {
+            let reveal = reveal_secs(&event.text);
+            let lead = (state.latency_ms / 1000) as i64;
+            if let Some(due) = state.schedule.get_mut(event.cleric) {
+                *due = next_start(seconds, reveal, pause, lead);
+            }
+        }
+    }
+
     let status = status_of(&state, seconds);
     drop(state);
 
@@ -656,6 +712,29 @@ fn complete(app: &AppHandle, shared: &Arc<Mutex<AppState>>, finished: Finished) 
     if let Err(error) = app.emit(EVENT_STATUS, &status) {
         eprintln!("cannot emit the chapel status: {error}");
     }
+}
+
+/// Seconds the interface needs to reveal a prayer at its typing speed.
+fn reveal_secs(text: &str) -> i64 {
+    let characters = text.chars().count() as u64;
+    characters.div_ceil(REVEAL_CHARS_PER_SECOND) as i64
+}
+
+/// When to start composing the next prayer.
+///
+/// The prayer on screen finishes typing at `now + reveal`; the next one is due
+/// `pause` seconds later. A reply takes `lead` seconds on average, so the
+/// request leaves `lead` seconds before that moment — during the typing when the
+/// pause is short, just before it when the pause is long. It never starts
+/// before `now`, and never waits longer than the whole turn.
+fn next_start(now: i64, reveal: i64, pause: u64, lead: i64) -> i64 {
+    let turn = reveal + pause as i64;
+    (now + turn - lead.clamp(0, turn)).max(now)
+}
+
+/// Running average of how long a reply takes, in milliseconds.
+fn smooth_latency(current: u64, sample: u64) -> u64 {
+    (sample as f64 * LATENCY_WEIGHT + current as f64 * (1.0 - LATENCY_WEIGHT)).round() as u64
 }
 
 fn emit_status(app: &AppHandle, shared: &Arc<Mutex<AppState>>, now: i64) {
@@ -703,6 +782,7 @@ pub fn status_of(state: &AppState, now: i64) -> ChapelStatus {
         next_in_secs,
         waiting_for,
         buffered: state.buffers.len(),
+        reveal_cps: REVEAL_CHARS_PER_SECOND,
     }
 }
 
@@ -777,5 +857,34 @@ mod tests {
             .collect();
         buffers.store(0, "islam|English|", many);
         assert_eq!(buffers.len(), MAX_BUFFERED);
+    }
+
+    #[test]
+    fn a_prayer_is_revealed_at_the_interface_typing_speed() {
+        assert_eq!(reveal_secs("love"), 1);
+        assert_eq!(reveal_secs(&"x".repeat(250)), 25);
+        assert_eq!(reveal_secs(""), 0);
+    }
+
+    #[test]
+    fn the_next_request_starts_before_the_pause_ends() {
+        // No measurement yet: the request leaves when the pause ends.
+        assert_eq!(next_start(100, 20, 5, 0), 125);
+        // A short pause: the request overlaps the typing of the prayer on screen.
+        assert_eq!(next_start(100, 20, 5, 8), 117);
+        // A long pause: it still leaves only eight seconds before the turn.
+        assert_eq!(next_start(100, 20, 120, 8), 232);
+        // A hopelessly slow network never pulls the start before the reply.
+        assert_eq!(next_start(100, 20, 5, 999), 100);
+        // A silent canon is spoken while the previous words are still typing.
+        assert_eq!(next_start(100, 0, 5, 8), 100);
+    }
+
+    #[test]
+    fn the_measured_latency_moves_towards_the_latest_reply() {
+        let once = smooth_latency(DEFAULT_LATENCY_MS, 20_000);
+        assert!(once > DEFAULT_LATENCY_MS && once < 20_000);
+        let settled = (0..40).fold(once, |current, _| smooth_latency(current, 2_000));
+        assert!(settled < 2_500, "a fast network is learned: {settled}");
     }
 }

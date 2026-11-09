@@ -73,6 +73,9 @@ pub struct AppState {
     last_error: Option<String>,
     /// Prayers a batch already paid for, waiting for their slot's turn.
     buffers: PrayerBuffers,
+    /// Running average of how long a reply takes, so the next prayer can be
+    /// asked for early enough to be ready when the pause ends.
+    latency_ms: u64,
     /// `CC_BATCH` override; religion profiles carry their own default.
     batch_override: Option<u32>,
 }
@@ -112,6 +115,7 @@ impl AppState {
             quiet_rotation: 0,
             last_error: None,
             buffers: PrayerBuffers::default(),
+            latency_ms: scheduler::DEFAULT_LATENCY_MS,
             batch_override: batch_from_env(),
         };
         state.rebuild_providers();
@@ -124,17 +128,10 @@ impl AppState {
     }
 
     /// The prayer language follows the interface language, so a Russian user
-    /// gets Russian prayers without touching the prompt. The prompt names the
-    /// language in full, which models follow far more reliably than a code.
+    /// gets Russian prayers without touching the prompt. The crate's language
+    /// table supplies the full name models actually follow.
     fn prayer_language(&self) -> &'static str {
-        match self.preferences().language.as_str() {
-            "ru" => "Russian",
-            "uk" => "Ukrainian",
-            "he" => "Hebrew",
-            "de" => "German",
-            "es" => "Spanish",
-            _ => "English",
-        }
+        cyberclergy_llm::english_name(&self.preferences().language)
     }
 
     /// Recomposes provider settings from `.env` plus the credentials held by the

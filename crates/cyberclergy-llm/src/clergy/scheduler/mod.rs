@@ -145,10 +145,11 @@ impl Cadence {
         }
     }
 
-    /// A rhythm the person chose themselves: one prayer of the whole cloud
-    /// every `cloud_secs`. The per-cleric gap is that multiplied by the number
-    /// of clerics, so adding a robot spreads the prayers instead of doubling
-    /// them — the cloud keeps the promised tempo whatever its size.
+    /// A rhythm the person chose themselves. This is only the provisional gap:
+    /// the interface needs a few seconds to type a prayer and reports when the
+    /// last word lands, so `complete` then pushes the slot's next turn to
+    /// `reveal + pause`. The per-cleric gap is scaled by the roster so adding a
+    /// robot spreads the prayers instead of doubling them.
     pub fn every(cloud_secs: u64, clerics: usize) -> Self {
         let slots = clerics.clamp(1, MAX_SLOTS) as u64;
         Self {

@@ -96,9 +96,9 @@ export const ru: Dictionary = {
   paceCalm: "Тихий",
   paceNormal: "Обычный",
   paceLively: "Частый",
-  paceSeconds: "молитва каждые {secs} с",
+  paceSeconds: "пауза {secs} с после молитвы",
   paceHint:
-    "Как часто на облаке появляется молитва. Двиньте ползунок, чтобы выбрать ритм в секундах.",
+    "Пауза после последнего слова молитвы. Новая начинается только когда прежняя дописана.",
   religionCustom: "Своя традиция",
   religionCustomOpen: "Добавить свою",
   religionCustomClose: "Свернуть форму",

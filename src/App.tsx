@@ -77,7 +77,11 @@ export default function App() {
 
   const enabled = configured.length > 0;
 
-  const chapel = useChapel({ enabled });
+  const chapel = useChapel({
+    enabled,
+    // The chosen rhythm is a pause after a prayer, and the hook owns the typing.
+    pauseSecs: preferences.interval_secs,
+  });
   const confessions = useConfessions();
   const reloadConfessions = confessions.reload;
 

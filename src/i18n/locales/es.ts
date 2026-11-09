@@ -103,9 +103,9 @@ export const es: Dictionary = {
   paceCalm: "Suave",
   paceNormal: "Normal",
   paceLively: "Vivo",
-  paceSeconds: "una oración cada {secs} s",
+  paceSeconds: "{secs} s de pausa tras cada oración",
   paceHint:
-    "Con qué frecuencia aparece una oración en la nube. Mueve el control para elegir el ritmo en segundos.",
+    "Una pausa después de la última palabra de una oración. La siguiente empieza solo cuando esta se ha escrito del todo.",
   religionCustom: "Tradición propia",
   religionCustomOpen: "Añadir la tuya",
   religionCustomClose: "Ocultar el formulario",

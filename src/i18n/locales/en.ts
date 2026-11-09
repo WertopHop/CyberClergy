@@ -97,9 +97,9 @@ export const en = {
   paceCalm: "Calm",
   paceNormal: "Normal",
   paceLively: "Lively",
-  paceSeconds: "a prayer every {secs} s",
+  paceSeconds: "{secs} s after each prayer",
   paceHint:
-    "How often a prayer appears on the cloud. Move the slider to choose the rhythm in seconds.",
+    "A pause after the last word of a prayer. The next one starts only when it has been read out.",
   religionCustom: "Own tradition",
   religionCustomOpen: "Add your own",
   religionCustomClose: "Hide the form",

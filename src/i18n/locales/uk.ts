@@ -98,9 +98,9 @@ export const uk: Dictionary = {
   paceCalm: "Тихий",
   paceNormal: "Звичайний",
   paceLively: "Частий",
-  paceSeconds: "молитва кожні {secs} с",
+  paceSeconds: "пауза {secs} с після молитви",
   paceHint:
-    "Як часто на хмарі з'являється молитва. Посуньте повзунок, щоб вибрати ритм у секундах.",
+    "Пауза після останнього слова молитви. Нова починається лише коли попередня дописана.",
   religionCustom: "Власна традиція",
   religionCustomOpen: "Додати свою",
   religionCustomClose: "Згорнути форму",

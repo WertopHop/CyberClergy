@@ -1,64 +1,48 @@
 // Provider labels and the roster rules shared by the settings sheet, the
-// confessional and the chapel. Keeping them here means a new network is added
-// in one place on the interface side, next to its entry in the Rust spec.
+// confessional and the chapel. A new network is one line in `PROVIDER_LABELS`
+// here and one spec row in the Rust crate.
 import type { Translate } from "../i18n";
+import type { Dictionary } from "../i18n/locales/en";
 import type { ProviderId } from "./types";
 
 /** Longest recital a person may ask for; mirrors the crate's `MAX_REPEAT`. */
 export const MAX_REPEAT = 999;
 
+/**
+ * Localisation key of every network, kept in the crate's spec order.
+ *
+ * `Record<ProviderId, ...>` makes the compiler refuse a provider added to the
+ * union without a label, so the map replaces both the old switch and a separate
+ * id list.
+ */
+const PROVIDER_LABELS: Record<ProviderId, keyof Dictionary> = {
+  openrouter: "providerOpenRouter",
+  gemini: "providerGemini",
+  groq: "providerGroq",
+  mistral: "providerMistral",
+  cloudflare: "providerCloudflare",
+  nvidia: "providerNvidia",
+  together: "providerTogether",
+  cerebras: "providerCerebras",
+  deepinfra: "providerDeepinfra",
+  "github-models": "providerGithub",
+  ollama: "providerOllama",
+  custom: "providerCustom",
+};
+
 /** Every network the interface can name, in the crate's spec order. */
-export const PROVIDER_IDS: ProviderId[] = [
-  "openrouter",
-  "gemini",
-  "groq",
-  "mistral",
-  "cloudflare",
-  "nvidia",
-  "together",
-  "cerebras",
-  "deepinfra",
-  "github-models",
-  "ollama",
-  "custom",
-];
+export const PROVIDER_IDS = Object.keys(PROVIDER_LABELS) as ProviderId[];
 
 /** Highest number of robots the cloud holds: four tiers of three, one per network. */
 export const MAX_ROBOTS = PROVIDER_IDS.length;
 
 export function isProviderId(value: string): value is ProviderId {
-  return PROVIDER_IDS.some((id) => id === value);
+  return Object.prototype.hasOwnProperty.call(PROVIDER_LABELS, value);
 }
 
 export function providerLabel(id: ProviderId, t: Translate): string {
-  switch (id) {
-    case "openrouter":
-      return t("providerOpenRouter");
-    case "gemini":
-      return t("providerGemini");
-    case "groq":
-      return t("providerGroq");
-    case "mistral":
-      return t("providerMistral");
-    case "cloudflare":
-      return t("providerCloudflare");
-    case "nvidia":
-      return t("providerNvidia");
-    case "together":
-      return t("providerTogether");
-    case "cerebras":
-      return t("providerCerebras");
-    case "deepinfra":
-      return t("providerDeepinfra");
-    case "github-models":
-      return t("providerGithub");
-    case "ollama":
-      return t("providerOllama");
-    case "custom":
-      return t("providerCustom");
-    default:
-      return id;
-  }
+  const key = PROVIDER_LABELS[id];
+  return key ? t(key) : id;
 }
 
 /** Journal rows name networks by their id; the quiet canon is not a network. */

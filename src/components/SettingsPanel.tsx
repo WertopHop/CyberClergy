@@ -5,6 +5,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { LOCALES, type Translate } from "../i18n";
+import type { Dictionary } from "../i18n/locales/en";
 import {
   checkProvider,
   clearProvider,
@@ -39,23 +40,20 @@ interface SettingsPanelProps {
   onReligions: (religions: ReligionProfile[]) => void;
 }
 
+/** Suffixes a provider variable can end with, longest first so `_TOKEN` never
+ * steals `_API_TOKEN`, and a variable nobody planned for keeps its own name. */
+const FIELD_LABELS: Array<[suffix: string, key: keyof Dictionary]> = [
+  ["_API_KEY", "fieldApiKey"],
+  ["_API_TOKEN", "fieldToken"],
+  ["_TOKEN", "fieldToken"],
+  ["_ACCOUNT_ID", "fieldAccountId"],
+  ["_BASE_URL", "fieldBaseUrl"],
+  ["_MODEL", "fieldModel"],
+];
+
 function baseFieldLabel(name: string, t: Translate): string {
-  if (name.endsWith("_API_KEY")) {
-    return t("fieldApiKey");
-  }
-  if (name.endsWith("_API_TOKEN") || name.endsWith("_TOKEN")) {
-    return t("fieldToken");
-  }
-  if (name.endsWith("_ACCOUNT_ID")) {
-    return t("fieldAccountId");
-  }
-  if (name.endsWith("_BASE_URL")) {
-    return t("fieldBaseUrl");
-  }
-  if (name.endsWith("_MODEL")) {
-    return t("fieldModel");
-  }
-  return name;
+  const match = FIELD_LABELS.find(([suffix]) => name.endsWith(suffix));
+  return match ? t(match[1]) : name;
 }
 
 /** Numbered custom gateways share their labels, so the slot is appended:

@@ -128,6 +128,8 @@ export interface ChapelStatus {
   waiting_for: ProviderId | null;
   /** Prayers a batch already paid for, waiting for their turn. */
   buffered: number;
+  /** Characters per second the shell expects the interface to type at. */
+  reveal_cps: number;
 }
 
 export type PrayerSource = "schedule" | "intercession" | "quiet";

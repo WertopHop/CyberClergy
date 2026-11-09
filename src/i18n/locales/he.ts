@@ -98,9 +98,9 @@ export const he: Dictionary = {
   paceCalm: "שקט",
   paceNormal: "רגיל",
   paceLively: "תוסס",
-  paceSeconds: "תפילה כל {secs} שנ׳",
+  paceSeconds: "הפסקה של {secs} שנ׳ אחרי כל תפילה",
   paceHint:
-    "באיזו תדירות מופיעה תפילה על הענן. הזז את המחוון כדי לבחור קצב בשניות.",
+    "הפסקה אחרי המילה האחרונה של התפילה. הבאה מתחילה רק כשזו נכתבה עד הסוף.",
   religionCustom: "מסורת אישית",
   religionCustomOpen: "הוספת מסורת משלך",
   religionCustomClose: "כיווץ הטופס",

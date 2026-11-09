@@ -8,12 +8,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cyberclergy_llm::{ProfileCatalog, ReligionProfile};
+use cyberclergy_llm::{
+    ProfileCatalog, ReligionProfile, ADDENDUM_FILE, OFFLINE_FILE, PROFILE_FILE,
+};
 
 pub const CLERGY_DIR: &str = "clergy";
-const PROFILE_FILE: &str = "profile.json";
-const ADDENDUM_FILE: &str = "prompt_addendum.md";
-const OFFLINE_FILE: &str = "offline.json";
 
 /// Where user traditions live, inside the application config directory.
 pub fn directory(config_dir: &Path) -> PathBuf {

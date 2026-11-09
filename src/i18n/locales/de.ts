@@ -103,9 +103,9 @@ export const de: Dictionary = {
   paceCalm: "Ruhig",
   paceNormal: "Normal",
   paceLively: "Lebhaft",
-  paceSeconds: "ein Gebet alle {secs} s",
+  paceSeconds: "{secs} s Pause nach jedem Gebet",
   paceHint:
-    "Wie oft ein Gebet auf der Wolke erscheint. Schiebe den Regler, um den Rhythmus in Sekunden zu wählen.",
+    "Eine Pause nach dem letzten Wort eines Gebets. Das nächste beginnt erst, wenn es zu Ende geschrieben ist.",
   religionCustom: "Eigene Tradition",
   religionCustomOpen: "Eigene hinzufügen",
   religionCustomClose: "Formular einklappen",
